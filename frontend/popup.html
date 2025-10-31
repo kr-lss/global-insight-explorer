@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Global Insight Explorer</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Global Insight Explorer</h1>
+    
+    <div class="input-section">
+      <input type="text" id="urlInput" placeholder="Enter URL or use current tab">
+      <div class="type-switch">
+        <label><input type="radio" name="inputType" value="youtube" checked> YouTube</label>
+        <label><input type="radio" name="inputType" value="article"> Article</label>
+      </div>
+      <button id="analyzeBtn">Analyze</button>
+    </div>
+
+    <div id="loading" class="hidden">Analyzing...</div>
+
+    <div id="resultsSection" class="hidden">
+      <h2>Analysis Results</h2>
+      <div id="keyClaims"></div>
+      
+      <div id="factCheckSection" class="hidden">
+        <hr>
+        <h3>Fact-Check</h3>
+        <button id="factCheckBtn">Fact-Check Selected Claims</button>
+        <div id="factCheckResults"></div>
+      </div>
+    </div>
+
+    <div id="error" class="error-message hidden"></div>
+
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+
+{
+  "manifest_version": 3,
+  "name": "Global Insight Explorer",
+  "version": "0.1.0",
+  "description": "Analyzes web content to provide global perspectives and fact-checking.",
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "images/icon16.png",
+      "48": "images/icon48.png",
+      "128": "images/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "images/icon16.png",
+    "48": "images/icon48.png",
+    "128": "images/icon128.png"
+  },
+  "host_permissions": [
+    "http://127.0.0.1:8080/",
+    "http://localhost:8080/"
+  ]
+}
