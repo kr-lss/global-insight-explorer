@@ -3,6 +3,7 @@ Analysis API endpoints
 """
 from flask import Blueprint, request, jsonify
 from app.utils.analysis_service import AnalysisService
+from app.models.history import save_analysis_history
 
 analysis_bp = Blueprint('analysis', __name__, url_prefix='/api')
 
@@ -23,6 +24,12 @@ def analyze():
 
         # 서비스에 분석 요청 위임
         result, from_cache = analysis_service.analyze_content(url, input_type)
+
+        # 히스토리 저장 (비동기적으로, 실패해도 응답에 영향 없음)
+        try:
+            save_analysis_history(url, input_type, result)
+        except Exception as history_error:
+            print(f"⚠️ 히스토리 저장 실패 (계속 진행): {history_error}")
 
         return jsonify({'success': True, 'analysis': result, 'cached': from_cache})
 

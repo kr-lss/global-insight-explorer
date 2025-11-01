@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Global Insight Explorer - 미디어 콘텐츠 분석 및 사실 검증</title>
+  <link rel="stylesheet" href="main.css">
+</head>
+<body>
+  <header class="header">
+    <div class="header-content">
+      <h1>🌍 Global Insight Explorer</h1>
+      <p class="subtitle">미디어 콘텐츠 분석 및 사실 검증 도구</p>
+    </div>
+  </header>
+
+  <main class="main-container">
+    <div class="content-wrapper">
+
+      <!-- 인기/최근 분석 탭 -->
+      <section class="history-tabs card">
+        <div class="tab-buttons">
+          <button class="tab-btn active" data-tab="input">새 분석</button>
+          <button class="tab-btn" data-tab="popular">인기 콘텐츠</button>
+          <button class="tab-btn" data-tab="recent">최근 분석</button>
+        </div>
+      </section>
+
+      <!-- 입력 섹션 -->
+      <section id="inputTab" class="input-section card">
+        <h2>콘텐츠 분석하기</h2>
+        <div class="input-group">
+          <input
+            type="text"
+            id="urlInput"
+            placeholder="YouTube 링크 또는 기사 URL을 입력하세요"
+            class="url-input"
+          >
+
+          <div class="type-switch">
+            <label class="radio-label">
+              <input type="radio" name="inputType" value="youtube" checked>
+              <span class="radio-text">📺 YouTube</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="inputType" value="article">
+              <span class="radio-text">📰 Article</span>
+            </label>
+          </div>
+
+          <button id="analyzeBtn" class="btn btn-primary">
+            <span class="btn-text">분석 시작</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- 로딩 인디케이터 -->
+      <div id="loading" class="loading-container hidden">
+        <div class="spinner"></div>
+        <p class="loading-text">분석 중입니다...</p>
+      </div>
+
+      <!-- 인기 콘텐츠 섹션 -->
+      <section id="popularTab" class="history-section card hidden">
+        <h2>인기 콘텐츠</h2>
+        <p class="section-description">최근 7일간 가장 많이 분석된 콘텐츠입니다</p>
+        <div id="popularList" class="history-list"></div>
+      </section>
+
+      <!-- 최근 분석 섹션 -->
+      <section id="recentTab" class="history-section card hidden">
+        <h2>최근 분석</h2>
+        <p class="section-description">최근에 분석된 콘텐츠 목록입니다</p>
+        <div id="recentList" class="history-list"></div>
+      </section>
+
+      <!-- 에러 메시지 -->
+      <div id="error" class="error-message hidden"></div>
+
+      <!-- 분석 결과 섹션 -->
+      <section id="resultsSection" class="results-section hidden">
+        <div class="card">
+          <h2>📋 분석 결과</h2>
+          <div id="keyClaims" class="key-claims-container"></div>
+        </div>
+
+        <!-- 팩트체크 섹션 -->
+        <div id="factCheckSection" class="card hidden">
+          <h2>🔍 팩트 체크</h2>
+          <p class="section-description">
+            검증하고 싶은 주장을 선택한 후 팩트 체크 버튼을 클릭하세요.
+          </p>
+          <button id="factCheckBtn" class="btn btn-secondary">
+            <span class="btn-text">선택한 주장 팩트 체크</span>
+          </button>
+          <div id="factCheckResults" class="fact-check-results"></div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-content">
+      <p>&copy; 2025 Global Insight Explorer. All rights reserved.</p>
+      <p class="footer-note">이 도구는 참고용이며, 최종 판단은 사용자가 직접 하시기 바랍니다.</p>
+    </div>
+  </footer>
+
+  <script src="main.js"></script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 # Global Insight Explorer
 
-글로벌 인사이트 탐색기 - 미디어 콘텐츠 분석 및 사실 검증 도구
+글로벌 인사이트 탐색기 - 미디어 콘텐츠 분석 및 사실 검증 웹 애플리케이션
 
 ## 프로젝트 구조
 
@@ -18,9 +18,14 @@ global-insight-explorer/
 ├── .gitignore          # Git 제외 파일
 ├── pytest.ini          # 테스트 설정
 │
-├── app/                # 애플리케이션 코드
+├── frontend/           # 웹 애플리케이션 (프론트엔드)
+│   ├── index.html      # 메인 HTML 페이지
+│   ├── main.js         # JavaScript 로직
+│   └── main.css        # 스타일시트
+│
+├── app/                # 백엔드 API 서버
 │   ├── __init__.py
-│   ├── main.py         # 진입점
+│   ├── main.py         # Flask 서버 진입점
 │   ├── config.py       # 설정 관리
 │   ├── models/         # 데이터 모델
 │   │   ├── __init__.py
@@ -42,11 +47,18 @@ global-insight-explorer/
 
 ## 기능
 
+### 핵심 기능
 - YouTube 영상 및 기사 콘텐츠 분석
 - AI 기반 핵심 주장 추출
 - 관련 뉴스 기사 검색 및 분석
-- 언론사 신뢰도 평가
+- 언론사 신뢰도 평가 (Firestore 기반)
 - 다양한 관점의 정보 수집
+
+### 신규 기능 (Firestore 활용)
+- **분석 히스토리**: 사용자가 분석한 콘텐츠 기록 자동 저장
+- **인기 콘텐츠**: 조회수 기준 인기 콘텐츠 랭킹
+- **최근 분석**: 최근 분석된 콘텐츠 목록
+- **언론사 DB**: Firestore에서 언론사 정보 동적 로드 (fallback 지원)
 
 ## 설치
 
@@ -62,6 +74,21 @@ cp .env.example .env
 GCP_PROJECT=your-project-id
 GCP_REGION=us-central1
 ```
+
+### Firestore 초기 설정 (선택사항)
+
+언론사 신뢰도 데이터는 Firestore에서 동적으로 로드됩니다. Firestore 연결이 실패하면 자동으로 fallback 데이터를 사용합니다.
+
+**Firestore에 초기 데이터 업로드:**
+```bash
+# 현재 Firestore 데이터 조회
+python scripts/upload_media_to_firestore.py --view
+
+# 초기 데이터 업로드 (기존 데이터 덮어쓰기)
+python scripts/upload_media_to_firestore.py
+```
+
+**참고:** Firestore 없이도 애플리케이션은 정상 작동합니다 (fallback 데이터 사용)
 
 ### 로컬 설치
 
@@ -99,6 +126,10 @@ chmod +x run.sh
 python -m app.main
 ```
 
+서버가 시작되면 브라우저에서 다음 주소로 접속:
+- **웹 애플리케이션**: http://127.0.0.1:8080
+- **API 엔드포인트**: http://127.0.0.1:8080/api/
+
 ### Docker 실행
 
 ```bash
@@ -118,6 +149,8 @@ make docker-stop
 # 또는
 docker-compose down
 ```
+
+Docker로 실행 시에도 동일하게 http://127.0.0.1:8080 으로 접속
 
 ## API 엔드포인트
 
@@ -152,8 +185,29 @@ Content-Type: application/json
 
 ### 언론사 신뢰도 조회
 ```
+# 전체 언론사 목록 (Firestore에서 로드)
 GET /api/media-credibility
+
+# 특정 언론사 조회
 GET /api/media-credibility/<source>
+
+# 캐시 새로고침 (Firestore 재로드)
+POST /api/media-credibility/reload
+```
+
+### 분석 히스토리 조회
+```
+# 최근 분석 목록
+GET /api/history/recent?limit=20&type=youtube
+
+# 인기 콘텐츠 (조회수 기준)
+GET /api/history/popular?limit=10&days=7&type=youtube
+
+# 특정 주제로 검색
+GET /api/history/by-topic/<topic>?limit=20
+
+# 통계 조회
+GET /api/history/statistics
 ```
 
 ## 개발
@@ -184,8 +238,19 @@ make lint
 make dev
 ```
 
+## 사용 방법
+
+1. 서버를 실행합니다 (`python -m app.main` 또는 `make run`)
+2. 브라우저에서 http://127.0.0.1:8080 으로 접속합니다
+3. YouTube 링크 또는 뉴스 기사 URL을 입력합니다
+4. "분석 시작" 버튼을 클릭하여 주요 주장을 추출합니다
+5. 추출된 주장 중 팩트체크하고 싶은 항목을 선택합니다
+6. "선택한 주장 팩트 체크" 버튼을 클릭하여 관련 기사를 검색합니다
+7. 다양한 언론사의 보도와 신뢰도를 확인합니다
+
 ## 기술 스택
 
+- **Frontend**: HTML5, CSS3, Vanilla JavaScript
 - **Backend**: Flask, Python 3.9+
 - **AI**: Google Vertex AI (Gemini)
 - **Database**: Google Cloud Firestore
