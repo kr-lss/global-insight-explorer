@@ -18,7 +18,7 @@ from app.config import config
 gemini = None
 try:
     vertexai.init(project=config.GCP_PROJECT, location=config.GCP_REGION)
-    gemini = GenerativeModel('gemini-1.5-flash')
+    gemini = GenerativeModel('gemini-2.5-flash')
     print("✅ (Service) Gemini API 연결 성공")
 except Exception as e:
     print(f"⚠️ (Service) Gemini API 연결 실패: {e}")
