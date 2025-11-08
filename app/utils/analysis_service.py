@@ -7,7 +7,7 @@ import hashlib
 from datetime import datetime
 
 import vertexai
-from vertexai.generative_models import GenerativeModel
+from vertexai.preview.generative_models import GenerativeModel
 from google.cloud import firestore
 
 from app.models.extractor import BaseExtractor, YoutubeExtractor, ArticleExtractor

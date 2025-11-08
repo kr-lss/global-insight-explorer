@@ -3,8 +3,18 @@
 요청을 받아 서비스 레이어에 위임하는 역할
 """
 import os
+import sys
 from flask import Flask, send_from_directory
 from flask_cors import CORS
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Windows에서 UTF-8 인코딩 설정 (emoji 출력을 위해)
+if sys.platform == 'win32':
+    import io
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 from app.config import config
 from app.routes import health_bp, analysis_bp, media_bp, history_bp

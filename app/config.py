@@ -17,6 +17,7 @@ class Config:
     # GCP settings
     GCP_PROJECT: str = os.environ.get('GCP_PROJECT', 'your-project-id')
     GCP_REGION: str = os.environ.get('GCP_REGION', 'us-central1')
+    GCS_BUCKET_NAME: str = os.environ.get('GCS_BUCKET_NAME', '')
 
     # API settings
     API_VERSION: str = 'v1'
