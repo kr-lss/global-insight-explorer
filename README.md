@@ -29,36 +29,50 @@ global-insight-explorer/
 │   ├── config.py       # 설정 관리
 │   ├── models/         # 데이터 모델
 │   │   ├── __init__.py
-│   │   ├── media.py    # 언론사 신뢰도 데이터
-│   │   └── extractor.py # 콘텐츠 추출기
+│   │   ├── media.py    # 언론사 신뢰도 데이터 (Firestore)
+│   │   ├── history.py  # 분석 히스토리 (Firestore)
+│   │   └── extractor.py # 콘텐츠 추출기 (YouTube/Article)
 │   ├── routes/         # API 라우트
 │   │   ├── __init__.py
 │   │   ├── health.py   # 헬스 체크
 │   │   ├── analysis.py # 분석 API
-│   │   └── media.py    # 미디어 신뢰도 API
+│   │   ├── media.py    # 미디어 신뢰도 API
+│   │   └── history.py  # 히스토리 조회 API
 │   └── utils/          # 유틸리티
 │       ├── __init__.py
 │       └── analysis_service.py # 분석 서비스
 │
 ├── tests/              # 테스트 코드
-├── scripts/            # 유틸리티 스크립트
-└── docs/               # 문서
+└── scripts/            # 유틸리티 스크립트
+    └── upload_media_to_firestore.py
 ```
 
 ## 기능
 
 ### 핵심 기능
-- YouTube 영상 및 기사 콘텐츠 분석
-- AI 기반 핵심 주장 추출
-- 관련 뉴스 기사 검색 및 분석
-- 언론사 신뢰도 평가 (Firestore 기반)
-- 다양한 관점의 정보 수집
+- **YouTube 영상 분석**: 자막 우선, 실패 시 GCS 버킷에 영상 다운로드 후 Gemini 2.0으로 영상 분석
+- **기사 콘텐츠 분석**: 웹 기사 자동 추출 및 핵심 주장 분석
+- **AI 기반 핵심 주장 추출**: Gemini 2.5 Flash를 사용한 정교한 분석
+- **관련 뉴스 기사 검색**: Gemini Google Search Grounding을 통한 실시간 기사 검색
+- **언론사 신뢰도 평가**: Firestore 기반 동적 신뢰도 데이터 (fallback 지원)
+- **다양한 관점의 정보 수집**: 여러 언론사의 보도를 종합하여 균형잡힌 시각 제공
 
-### 신규 기능 (Firestore 활용)
-- **분석 히스토리**: 사용자가 분석한 콘텐츠 기록 자동 저장
-- **인기 콘텐츠**: 조회수 기준 인기 콘텐츠 랭킹
-- **최근 분석**: 최근 분석된 콘텐츠 목록
-- **언론사 DB**: Firestore에서 언론사 정보 동적 로드 (fallback 지원)
+### 고급 기능 (Firestore 활용)
+- **분석 히스토리**: 사용자가 분석한 콘텐츠 기록 자동 저장 및 조회수 추적
+- **인기 콘텐츠**: 조회수 기준 인기 콘텐츠 랭킹 (기간별 필터링 지원)
+- **최근 분석**: 최근 분석된 콘텐츠 목록 (타입별 필터링)
+- **주제별 검색**: 주제 태그를 통한 콘텐츠 검색
+- **통계 대시보드**: 전체 분석 통계 및 인사이트
+- **결과 캐싱**: 동일 URL 재분석 시 즉시 응답 (Firestore 캐시)
+
+### YouTube 영상 분석 상세
+**하이브리드 방식**:
+1. **1단계 (자막 추출)**: `youtube-transcript-api`를 사용한 자막 추출 시도
+2. **2단계 (영상 분석)**: 자막 없는 경우
+   - `yt-dlp`로 영상 다운로드 (720p 이하, MP4)
+   - Google Cloud Storage 버킷에 임시 업로드
+   - Gemini 2.0 Flash Exp로 영상 프레임 및 오디오 분석
+   - 분석 완료 후 GCS 및 로컬 파일 자동 삭제
 
 ## 설치
 
@@ -73,7 +87,13 @@ cp .env.example .env
 ```
 GCP_PROJECT=your-project-id
 GCP_REGION=us-central1
+GCS_BUCKET_NAME=your-bucket-name  # YouTube 영상 분석용 (선택사항)
 ```
+
+**참고**:
+- `GCS_BUCKET_NAME`이 설정되지 않으면 YouTube 자막 추출만 가능합니다.
+- 자막이 없는 영상을 분석하려면 GCS 버킷 설정이 필요합니다.
+- Firestore 설정이 없어도 애플리케이션은 fallback 데이터로 정상 작동합니다.
 
 ### Firestore 초기 설정 (선택사항)
 

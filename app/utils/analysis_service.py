@@ -131,39 +131,72 @@ class AnalysisService:
         return analysis_result, articles
 
     def _search_real_articles(self, keywords: list):
+        """Gemini Google Search Grounding을 사용한 실제 기사 검색"""
         if not keywords:
             return []
         try:
-            query = " OR ".join(keywords)
-            print(f"🔍 Google 검색 실행: {query}")
+            from vertexai.preview.generative_models import GenerativeModel, Tool, grounding
 
-            # 내장 웹 검색 도구 호출
-            from Gemini.google_web_search import google_web_search
+            query = " ".join(keywords[:5])  # 최대 5개 키워드 결합
+            print(f"🔍 Gemini Google Search로 검색 중: {query}")
 
-            search_results = google_web_search(query=query)
+            # Google Search Grounding 도구 설정
+            search_tool = Tool.from_google_search_retrieval(
+                grounding.GoogleSearchRetrieval()
+            )
+
+            # Gemini 모델에 검색 도구 추가
+            search_model = GenerativeModel(
+                'gemini-2.0-flash-exp',
+                tools=[search_tool]
+            )
+
+            # 검색 쿼리 실행
+            search_prompt = f"""
+            다음 키워드와 관련된 최신 뉴스 기사를 검색하고, 각 기사에 대해 다음 정보를 JSON 배열로 반환해주세요:
+            - title: 기사 제목
+            - snippet: 기사 요약 (2-3문장)
+            - url: 기사 URL
+            - source: 언론사명
+            - published_date: 발행일 (YYYY-MM-DD 형식)
+
+            키워드: {query}
+
+            응답 형식:
+            {{"articles": [...]}}
+            """
+
+            response = search_model.generate_content(search_prompt)
+
+            # JSON 파싱
+            import json
+            result_text = response.text.strip().replace('```json', '').replace('```', '').strip()
+            search_data = json.loads(result_text)
 
             articles = []
-            if search_results and 'results' in search_results:
-                for result in search_results['results']:
-                    source = result.get('source', '출처 불명')
-                    credibility_info = get_media_credibility(source)
+            for result in search_data.get('articles', [])[:15]:  # 최대 15개
+                source = result.get('source', '출처 불명')
+                credibility_info = get_media_credibility(source)
 
-                    articles.append(
-                        {
-                            'title': result.get('title', '제목 없음'),
-                            'snippet': result.get('snippet', '내용 없음'),
-                            'url': result.get('url', '#'),
-                            'source': source,
-                            'country': credibility_info.get('country', 'Unknown'),
-                            'credibility': credibility_info.get('credibility', 50),
-                            'bias': credibility_info.get('bias', '알 수 없음'),
-                            'published_date': result.get('publishDate', '날짜 없음'),
-                        }
-                    )
+                articles.append({
+                    'title': result.get('title', '제목 없음'),
+                    'snippet': result.get('snippet', '내용 없음'),
+                    'url': result.get('url', '#'),
+                    'source': source,
+                    'country': credibility_info.get('country', 'Unknown'),
+                    'credibility': credibility_info.get('credibility', 50),
+                    'bias': credibility_info.get('bias', '알 수 없음'),
+                    'published_date': result.get('published_date', '날짜 없음'),
+                })
+
+            print(f"✅ {len(articles)}개 기사 검색 완료")
             return articles
+
         except Exception as e:
-            print(f"⚠️ 실제 기사 검색 실패: {e}")
-            return []
+            print(f"⚠️ 기사 검색 실패: {e}")
+            print(f"⚠️ Fallback: 샘플 기사 반환")
+            # Fallback: 샘플 데이터 반환
+            return self._get_sample_articles(keywords)
 
     def _find_related_articles_with_gemini(
         self, original_content: str, claims: list, articles: list
@@ -255,3 +288,19 @@ class AnalysisService:
             print(f"✅ 캐시 저장: {url[:50]}...")
         except Exception as e:
             print(f"⚠️ 캐시 저장 실패: {e}")
+
+    def _get_sample_articles(self, keywords: list):
+        """검색 실패 시 샘플 기사 반환"""
+        print("⚠️ 샘플 기사 데이터 반환 (검색 기능 비활성화)")
+        return [
+            {
+                'title': f'{" ".join(keywords[:2])}에 대한 샘플 기사',
+                'snippet': '실제 기사 검색 기능을 사용하려면 Google Search Grounding API를 활성화하세요.',
+                'url': '#',
+                'source': 'Sample News',
+                'country': 'Unknown',
+                'credibility': 50,
+                'bias': '중립',
+                'published_date': '2024-01-01',
+            }
+        ]

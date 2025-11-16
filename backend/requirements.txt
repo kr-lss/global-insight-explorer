@@ -1,7 +1,0 @@
-Flask
-google-cloud-aiplatform
-youtube_transcript_api
-google-cloud-firestore
-requests
-beautifulsoup4
-Flask-Cors
