@@ -9,8 +9,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const factCheckResultsDiv = document.getElementById('factCheckResults');
   const errorDiv = document.getElementById('error');
 
-  // 로컬 백엔드 서버 주소
-  const API_BASE_URL = 'http://127.0.0.1:8080';
+  // 백엔드 서버 주소 (환경에 따라 자동 설정)
+  const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+    ? 'http://127.0.0.1:8080'
+    : `${window.location.protocol}//${window.location.hostname}${window.location.port ? ':' + window.location.port : ''}`;
   
   let currentAnalysis = null;
 
@@ -77,7 +79,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 2차 분석: 관련 기사 찾기
   factCheckBtn.addEventListener('click', async () => {
     const selectedClaims = Array.from(
-      document.querySelectorAll('#keyClaims input:checked')
+      document.querySelectorAll('#keyClaims input[type="checkbox"]:checked')
     ).map(input => input.value);
 
     if (selectedClaims.length === 0) {
@@ -87,7 +89,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     showLoading(true, '관련 기사를 검색하고 있습니다...');
     clearError();
-    findSourcesBtn.disabled = true;
+    factCheckBtn.disabled = true;
 
     try {
       const url = urlInput.value.trim();
@@ -122,7 +124,7 @@ document.addEventListener('DOMContentLoaded', () => {
       showError(err.message);
     } finally {
       showLoading(false);
-      findSourcesBtn.disabled = false;
+      factCheckBtn.disabled = false;
     }
   });
 
@@ -186,7 +188,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 관련 기사 및 신뢰도 표시
   function displaySourcesResults(analysis, articles) {
-    sourcesResultsDiv.innerHTML = '';
+    factCheckResultsDiv.innerHTML = '';
     
     const results = analysis.results || [];
     
@@ -293,10 +295,10 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
         resultEl.appendChild(coverageDiv);
       }
-      
-      sourcesResultsDiv.appendChild(resultEl);
+
+      factCheckResultsDiv.appendChild(resultEl);
     });
-    
+
     // 신뢰도 안내
     const guideEl = document.createElement('div');
     guideEl.className = 'credibility-guide';
@@ -320,7 +322,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ⚠️ 신뢰도는 참고용입니다. 최종 판단은 사용자가 직접 하세요.
       </p>
     `;
-    sourcesResultsDiv.appendChild(guideEl);
+    factCheckResultsDiv.appendChild(guideEl);
   }
 
   // Helper functions

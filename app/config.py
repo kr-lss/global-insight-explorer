@@ -26,6 +26,10 @@ class Config:
     # CORS settings
     CORS_ORIGINS: str = os.environ.get('CORS_ORIGINS', '*')
 
+    # Content processing limits
+    MAX_CONTENT_LENGTH_FIRST_ANALYSIS: int = 8000  # Gemini 1차 분석 최대 글자 수
+    MAX_CONTENT_LENGTH_SECOND_ANALYSIS: int = 4000  # Gemini 2차 분석 최대 글자 수
+
 
 # Global config instance
 config = Config()

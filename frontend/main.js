@@ -17,10 +17,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const recentList = document.getElementById('recentList');
   const tabBtns = document.querySelectorAll('.tab-btn');
 
-  // 백엔드 서버 주소 (환경에 따라 변경 가능)
+  // 백엔드 서버 주소 (환경에 따라 자동 설정)
   const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
     ? 'http://127.0.0.1:8080'
-    : 'http://127.0.0.1:8080'; // 프로덕션 환경에서는 실제 서버 주소로 변경
+    : `${window.location.protocol}//${window.location.hostname}${window.location.port ? ':' + window.location.port : ''}`;
 
   let currentAnalysis = null;
 
@@ -464,7 +464,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     } catch (err) {
       console.error('인기 콘텐츠 로드 실패:', err);
-      popularList.innerHTML = '<p class="error-text">로드 실패</p>';
+      popularList.innerHTML = `<p class="error-text">⚠️ 인기 콘텐츠를 불러올 수 없습니다<br><small>${err.message || '네트워크 오류'}</small></p>`;
     }
   }
 
@@ -485,7 +485,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     } catch (err) {
       console.error('최근 분석 로드 실패:', err);
-      recentList.innerHTML = '<p class="error-text">로드 실패</p>';
+      recentList.innerHTML = `<p class="error-text">⚠️ 최근 분석을 불러올 수 없습니다<br><small>${err.message || '네트워크 오류'}</small></p>`;
     }
   }
 

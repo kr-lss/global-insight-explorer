@@ -71,7 +71,7 @@ class AnalysisService:
         if not gemini:
             raise Exception("Gemini API를 사용할 수 없습니다.")
 
-        content = content[:8000]  # 컨텍스트 길이 조절
+        content = content[:config.MAX_CONTENT_LENGTH_FIRST_ANALYSIS]  # 컨텍스트 길이 조절
 
         prompt = f"""
         다음 텍스트를 분석하여 JSON 형식으로 답변해주세요.
@@ -204,7 +204,7 @@ class AnalysisService:
         if not gemini:
             raise Exception("Gemini API를 사용할 수 없습니다.")
 
-        original_content = original_content[:4000]
+        original_content = original_content[:config.MAX_CONTENT_LENGTH_SECOND_ANALYSIS]
         articles_text = "\n\n".join(
             [
                 f"[기사 {i+1}]\n제목: {article.get('title', '')}\n출처: {article.get('source', '')}\n내용: {article.get('snippet', '')}"

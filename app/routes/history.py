@@ -17,7 +17,7 @@ history_bp = Blueprint('history', __name__, url_prefix='/api')
 def recent_history():
     """최근 분석 히스토리 조회"""
     try:
-        limit = int(request.args.get('limit', 20))
+        limit = min(int(request.args.get('limit', 20)), 100)  # 최대 100개로 제한
         input_type = request.args.get('type', None)  # youtube, article, or None
 
         results = get_recent_history(limit=limit, input_type=input_type)
@@ -40,8 +40,8 @@ def recent_history():
 def popular_content():
     """인기 콘텐츠 조회 (조회수 기준)"""
     try:
-        limit = int(request.args.get('limit', 10))
-        days = int(request.args.get('days', 7))  # 최근 며칠, 0이면 전체 기간
+        limit = min(int(request.args.get('limit', 10)), 100)  # 최대 100개로 제한
+        days = max(0, int(request.args.get('days', 7)))  # 음수 방지
         input_type = request.args.get('type', None)
 
         results = get_popular_content(limit=limit, days=days, input_type=input_type)
@@ -65,7 +65,7 @@ def popular_content():
 def history_by_topic(topic):
     """특정 주제로 히스토리 검색"""
     try:
-        limit = int(request.args.get('limit', 20))
+        limit = min(int(request.args.get('limit', 20)), 100)  # 최대 100개로 제한
 
         results = get_history_by_topic(topic=topic, limit=limit)
 
