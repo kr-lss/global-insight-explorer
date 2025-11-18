@@ -30,6 +30,19 @@ class Config:
     MAX_CONTENT_LENGTH_FIRST_ANALYSIS: int = 8000  # Gemini 1차 분석 최대 글자 수
     MAX_CONTENT_LENGTH_SECOND_ANALYSIS: int = 4000  # Gemini 2차 분석 최대 글자 수
 
+    # Article search settings
+    MAX_ARTICLES_PER_SEARCH: int = 15  # Google Search로 검색할 최대 기사 수
+    MAX_ARTICLES_FOR_AI_ANALYSIS: int = 15  # AI에게 전달할 최대 기사 수
+    ERROR_LOG_PREVIEW_LENGTH: int = 500  # 에러 로그에 표시할 응답 길이
+
+    # AI Model settings
+    GEMINI_MODEL_ANALYSIS: str = 'gemini-2.5-flash'  # 1차/2차 분석용
+    GEMINI_MODEL_SEARCH: str = 'gemini-2.0-flash-exp'  # Google Search용
+
+    # Stance analysis settings
+    STANCE_TYPES: tuple = ('supporting', 'opposing', 'neutral')
+    CONFIDENCE_DECIMAL_PLACES: int = 2  # 확신도 소수점 자리수
+
 
 # Global config instance
 config = Config()
