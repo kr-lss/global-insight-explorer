@@ -177,6 +177,20 @@ def get_all_media_by_country(country_code):
     return all_media
 
 
+def get_all_media():
+    """모든 국가의 모든 언론사 목록 반환"""
+    if not _cache_loaded:
+        _load_media_from_firestore()
+
+    all_media = []
+
+    for country_code in _media_cache.keys():
+        country_media = get_all_media_by_country(country_code)
+        all_media.extend(country_media)
+
+    return all_media
+
+
 def reload_media_cache():
     """캐시 강제 새로고침 (관리 목적)"""
     global _cache_loaded

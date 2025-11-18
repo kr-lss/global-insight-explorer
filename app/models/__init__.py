@@ -2,7 +2,6 @@
 Data models package
 """
 from .media import (
-    MEDIA_CREDIBILITY_FALLBACK,
     get_media_credibility,
     get_all_media,
     reload_media_cache
@@ -18,7 +17,6 @@ from .history import (
 
 __all__ = [
     # Media
-    'MEDIA_CREDIBILITY_FALLBACK',
     'get_media_credibility',
     'get_all_media',
     'reload_media_cache',
