@@ -107,34 +107,52 @@ class YoutubeExtractor(BaseExtractor):
         gcs_blob_name = None
 
         try:
-            # 1. 영상 다운로드
+            # 1. 영상 다운로드 (여러 포맷 시도)
             temp_dir = tempfile.gettempdir()
             unique_filename = f"{uuid.uuid4()}.mp4"
             local_video_path = os.path.join(temp_dir, unique_filename)
 
-            ydl_opts = {
-                # ffmpeg 없이 작동: 가장 간단한 포맷 선택
-                'format': 'best',  # 가장 좋은 품질의 단일 파일 (병합 불필요)
-                'outtmpl': local_video_path,
-                'quiet': False,  # 디버깅을 위해 출력 활성화
-                'no_warnings': False,
-                # ffmpeg 병합 비활성화
-                'merge_output_format': None,
-                'postprocessors': [],
-                # 에러 처리
-                'ignoreerrors': False,
-                'abort_on_error': False,
-                # 네트워크 설정
-                'socket_timeout': 30,
-                'retries': 3,
-            }
+            # ffmpeg 없이 작동하는 포맷 리스트 (우선순위 순)
+            format_options = [
+                'best[ext=mp4]',  # mp4 단일 파일
+                'best[ext=webm]',  # webm 단일 파일
+                'best',  # 어떤 포맷이든 최고 품질
+                'worst',  # 최악의 경우 가장 낮은 품질이라도 다운로드
+            ]
 
-            print(f"📥 영상 다운로드 중...")
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
+            download_success = False
+            last_error = None
 
-            if not os.path.exists(local_video_path):
-                raise Exception("영상 다운로드 실패")
+            for format_option in format_options:
+                try:
+                    ydl_opts = {
+                        'format': format_option,
+                        'outtmpl': local_video_path,
+                        'quiet': True,
+                        'no_warnings': True,
+                        'merge_output_format': None,
+                        'postprocessors': [],
+                        'ignoreerrors': False,
+                        'socket_timeout': 30,
+                        'retries': 2,
+                    }
+
+                    print(f"📥 영상 다운로드 시도 중 (포맷: {format_option})...")
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        ydl.download([url])
+
+                    if os.path.exists(local_video_path):
+                        print(f"✅ 다운로드 성공 (포맷: {format_option})")
+                        download_success = True
+                        break
+
+                except Exception as e:
+                    last_error = e
+                    print(f"⚠️ 포맷 {format_option} 실패, 다음 포맷 시도...")
+                    continue
+
+            if not download_success:
+                raise Exception(f"모든 포맷 다운로드 실패: {last_error}")
 
             # 2. GCS 업로드
             gcs_blob_name = f"video-analysis/{unique_filename}"
