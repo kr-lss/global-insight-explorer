@@ -16,7 +16,6 @@ global-insight-explorer/
 ├── Makefile            # 자동화 명령어
 ├── README.md           # 프로젝트 설명
 ├── .gitignore          # Git 제외 파일
-├── pytest.ini          # 테스트 설정
 │
 ├── frontend/           # 웹 애플리케이션 (프론트엔드)
 │   ├── index.html      # 메인 HTML 페이지
@@ -47,7 +46,6 @@ global-insight-explorer/
 │       ├── __init__.py
 │       └── analysis_service.py # 분석 서비스 (리팩토링됨)
 │
-├── tests/              # 테스트 코드
 ├── scripts/            # 유틸리티 스크립트
 │   └── upload_media_to_firestore.py
 │
@@ -245,16 +243,6 @@ GET /api/history/statistics
 ```
 
 ## 개발
-
-### 테스트
-
-```bash
-# 전체 테스트 실행
-make test
-
-# 또는
-pytest tests/ -v
-```
 
 ### 코드 포맷팅
 
