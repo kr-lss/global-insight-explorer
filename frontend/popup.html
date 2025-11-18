@@ -26,7 +26,19 @@
       <div id="factCheckSection" class="hidden">
         <hr>
         <h3>Find Diverse Perspectives</h3>
-        <button id="factCheckBtn">Find Various Sources for Selected Claims</button>
+
+        <!-- Custom Claim Input -->
+        <div class="custom-claim-input">
+          <label for="customClaimInput">💭 Custom Claim:</label>
+          <textarea
+            id="customClaimInput"
+            placeholder="e.g., South Korea has the lowest birth rate in the world"
+            rows="3"
+          ></textarea>
+          <small class="input-hint">Select claims above or enter your own claim here.</small>
+        </div>
+
+        <button id="factCheckBtn">Find Various Sources</button>
         <div id="factCheckResults"></div>
       </div>
     </div>

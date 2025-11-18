@@ -71,3 +71,42 @@ button:hover {
   color: #fa383e;
   margin-top: 10px;
 }
+
+/* Custom Claim Input */
+.custom-claim-input {
+  margin: 10px 0;
+  padding: 10px;
+  background: #f0f2f5;
+  border-radius: 6px;
+}
+
+.custom-claim-input label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: #1c1e21;
+  font-size: 14px;
+}
+
+.custom-claim-input textarea {
+  width: 95%;
+  padding: 8px;
+  border: 1px solid #dddfe2;
+  border-radius: 6px;
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+  transition: border-color 0.2s;
+}
+
+.custom-claim-input textarea:focus {
+  outline: none;
+  border-color: #1877f2;
+}
+
+.custom-claim-input .input-hint {
+  display: block;
+  margin-top: 6px;
+  color: #65676b;
+  font-size: 12px;
+}

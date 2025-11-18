@@ -133,14 +133,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // 2차 분석: 관련 기사 찾기
+  // 2차 분석: 다양한 관점 찾기
   factCheckBtn.addEventListener('click', async () => {
     const selectedClaims = Array.from(
       document.querySelectorAll('#keyClaims input[type="checkbox"]:checked')
     ).map(input => input.value);
 
-    if (selectedClaims.length === 0) {
-      showError('확인할 주장을 최소 1개 선택해주세요');
+    // 직접 입력한 주장 가져오기
+    const customClaimInput = document.getElementById('customClaimInput');
+    const customClaim = customClaimInput ? customClaimInput.value.trim() : '';
+
+    // 선택된 주장과 직접 입력한 주장 합치기
+    const allClaims = [...selectedClaims];
+    if (customClaim) {
+      allClaims.push(customClaim);
+    }
+
+    if (allClaims.length === 0) {
+      showError('위의 주장을 선택하거나, 직접 주장을 입력해주세요');
       return;
     }
 
@@ -158,8 +168,8 @@ document.addEventListener('DOMContentLoaded', () => {
         body: JSON.stringify({
           url,
           inputType,
-          selected_claims: selectedClaims,
-          search_keywords: currentAnalysis?.search_keywords?.flat() || selectedClaims,
+          selected_claims: allClaims,
+          search_keywords: currentAnalysis?.search_keywords?.flat() || allClaims,
           related_countries: currentAnalysis?.related_countries || []
         }),
       });

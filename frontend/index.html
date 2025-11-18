@@ -88,10 +88,22 @@
         <div id="factCheckSection" class="card hidden">
           <h2>🔍 다양한 관점 찾기</h2>
           <p class="section-description">
-            확인하고 싶은 주장을 선택한 후, 다양한 출처와 관점을 찾아보세요.
+            아래 주장을 선택하거나, 직접 입력하여 다양한 출처와 관점을 찾아보세요.
           </p>
+
+          <!-- 직접 입력 영역 -->
+          <div class="custom-claim-input">
+            <label for="customClaimInput">💭 직접 입력한 주장:</label>
+            <textarea
+              id="customClaimInput"
+              placeholder="예: 한국의 출산율이 세계 최저 수준이다"
+              rows="3"
+            ></textarea>
+            <small class="input-hint">위의 분석 결과를 선택하거나, 여기에 직접 궁금한 주장을 입력하세요.</small>
+          </div>
+
           <button id="factCheckBtn" class="btn btn-secondary">
-            <span class="btn-text">선택한 주장의 다양한 출처 찾기</span>
+            <span class="btn-text">다양한 출처 찾기</span>
           </button>
           <div id="factCheckResults" class="fact-check-results"></div>
         </div>

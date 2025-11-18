@@ -355,6 +355,44 @@ body {
   color: #7b1fa2;
 }
 
+/* Custom Claim Input */
+.custom-claim-input {
+  margin-bottom: var(--spacing-lg);
+  padding: var(--spacing-md);
+  background: #f8f9fa;
+  border-radius: var(--border-radius);
+}
+
+.custom-claim-input label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: var(--spacing-sm);
+  color: var(--text-primary);
+}
+
+.custom-claim-input textarea {
+  width: 100%;
+  padding: var(--spacing-md);
+  border: 2px solid #dee2e6;
+  border-radius: var(--border-radius);
+  font-size: 1rem;
+  font-family: inherit;
+  resize: vertical;
+  transition: border-color 0.3s ease;
+}
+
+.custom-claim-input textarea:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.custom-claim-input .input-hint {
+  display: block;
+  margin-top: var(--spacing-sm);
+  color: #6c757d;
+  font-size: 0.875rem;
+}
+
 /* Fact Check Results */
 .fact-check-results {
   margin-top: var(--spacing-lg);
