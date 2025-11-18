@@ -2,17 +2,9 @@
 Content extractors for different media types
 """
 from abc import ABC, abstractmethod
-import os
-import uuid
-import tempfile
 import requests
 from bs4 import BeautifulSoup
 from youtube_transcript_api import YouTubeTranscriptApi
-import yt_dlp
-
-import vertexai
-from vertexai.preview.generative_models import GenerativeModel, Part
-from google.cloud import storage
 
 from app.config import config
 
@@ -27,29 +19,21 @@ class BaseExtractor(ABC):
 
 
 class YoutubeExtractor(BaseExtractor):
-    """유튜브 자막 추출 전략 (자막 우선, 실패 시 Gemini 영상 분석)"""
+    """유튜브 자막 추출 전략 (자막 우선, 실패 시 Direct URL Processing)"""
 
     def __init__(self):
-        """GCS 클라이언트 초기화"""
-        self.storage_client = None
-        self.bucket = None
-        self.gemini_model = None
+        """YouTube Video Service 초기화"""
+        self.video_service = None
 
-        # GCS 설정이 있으면 초기화
-        if config.GCS_BUCKET_NAME:
-            try:
-                self.storage_client = storage.Client(project=config.GCP_PROJECT)
-                self.bucket = self.storage_client.bucket(config.GCS_BUCKET_NAME)
-
-                # Gemini 2.5 모델 초기화
-                vertexai.init(project=config.GCP_PROJECT, location=config.GCP_REGION)
-                self.gemini_model = GenerativeModel('gemini-2.0-flash-exp')
-                print("✅ (YoutubeExtractor) GCS 및 Gemini 2.5 연결 성공")
-            except Exception as e:
-                print(f"⚠️ (YoutubeExtractor) GCS/Gemini 초기화 실패: {e}")
+        try:
+            from app.utils.youtube_video_service import YouTubeVideoService
+            self.video_service = YouTubeVideoService()
+            print("✅ (YoutubeExtractor) YouTube Video Service 연결 성공")
+        except Exception as e:
+            print(f"⚠️ (YoutubeExtractor) YouTube Video Service 초기화 실패: {e}")
 
     def extract(self, url: str) -> str:
-        """하이브리드 방식: 자막 우선, 실패 시 영상 분석"""
+        """하이브리드 방식: 자막 우선, 실패 시 Direct URL Processing"""
 
         # 1단계: 자막 추출 시도
         try:
@@ -60,13 +44,20 @@ class YoutubeExtractor(BaseExtractor):
         except Exception as transcript_error:
             print(f"⚠️ 자막 추출 실패: {transcript_error}")
 
-            # 2단계: Gemini로 영상 분석
-            if self.gemini_model and self.bucket:
-                print("🎬 Gemini 2.5로 영상 분석 시도 중...")
+            # 2단계: Direct URL Processing으로 영상 분석 (다운로드 불필요)
+            if self.video_service:
+                print("🎬 Direct URL Processing으로 영상 분석 시도 중...")
                 try:
-                    video_analysis = self._analyze_video_with_gemini(url)
-                    print(f"✅ 영상 분석 성공: {len(video_analysis)} 글자")
-                    return video_analysis
+                    result = self.video_service.analyze_video(url, analysis_type="transcript")
+
+                    # transcript 텍스트 추출
+                    transcript = result.get('transcript', '')
+                    if transcript:
+                        print(f"✅ 영상 분석 성공: {len(transcript)} 글자")
+                        return transcript
+                    else:
+                        raise Exception("영상 분석 결과에 transcript가 없습니다")
+
                 except Exception as video_error:
                     print(f"❌ 영상 분석 실패: {video_error}")
                     raise Exception(
@@ -76,7 +67,7 @@ class YoutubeExtractor(BaseExtractor):
                     )
             else:
                 raise Exception(
-                    f"자막을 가져올 수 없으며, GCS 설정이 없어 영상 분석을 할 수 없습니다.\n"
+                    f"자막을 가져올 수 없으며, YouTube Video Service를 사용할 수 없습니다.\n"
                     f"자막 오류: {transcript_error}"
                 )
 
@@ -100,101 +91,6 @@ class YoutubeExtractor(BaseExtractor):
 
         text = ' '.join([item['text'] for item in transcript.fetch()])
         return text
-
-    def _analyze_video_with_gemini(self, url: str) -> str:
-        """Gemini 2.5로 유튜브 영상 분석 (demoinvest 방식)"""
-        local_video_path = None
-        gcs_blob_name = None
-
-        try:
-            # 1. 영상 다운로드 (여러 포맷 시도)
-            temp_dir = tempfile.gettempdir()
-            unique_filename = f"{uuid.uuid4()}.mp4"
-            local_video_path = os.path.join(temp_dir, unique_filename)
-
-            # ffmpeg 없이 작동하는 포맷 리스트 (우선순위 순)
-            format_options = [
-                'best[ext=mp4]',  # mp4 단일 파일
-                'best[ext=webm]',  # webm 단일 파일
-                'best',  # 어떤 포맷이든 최고 품질
-                'worst',  # 최악의 경우 가장 낮은 품질이라도 다운로드
-            ]
-
-            download_success = False
-            last_error = None
-
-            for format_option in format_options:
-                try:
-                    ydl_opts = {
-                        'format': format_option,
-                        'outtmpl': local_video_path,
-                        'quiet': True,
-                        'no_warnings': True,
-                        'merge_output_format': None,
-                        'postprocessors': [],
-                        'ignoreerrors': False,
-                        'socket_timeout': 30,
-                        'retries': 2,
-                    }
-
-                    print(f"📥 영상 다운로드 시도 중 (포맷: {format_option})...")
-                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                        ydl.download([url])
-
-                    if os.path.exists(local_video_path):
-                        print(f"✅ 다운로드 성공 (포맷: {format_option})")
-                        download_success = True
-                        break
-
-                except Exception as e:
-                    last_error = e
-                    print(f"⚠️ 포맷 {format_option} 실패, 다음 포맷 시도...")
-                    continue
-
-            if not download_success:
-                raise Exception(f"모든 포맷 다운로드 실패: {last_error}")
-
-            # 2. GCS 업로드
-            gcs_blob_name = f"video-analysis/{unique_filename}"
-            blob = self.bucket.blob(gcs_blob_name)
-
-            print(f"☁️ GCS 업로드 중...")
-            blob.upload_from_filename(local_video_path)
-            gcs_uri = f"gs://{config.GCS_BUCKET_NAME}/{gcs_blob_name}"
-
-            # 3. Gemini API 호출
-            print(f"🤖 Gemini 2.5로 영상 분석 중...")
-            video_part = Part.from_uri(uri=gcs_uri, mime_type="video/mp4")
-
-            prompt = """
-            이 영상의 내용을 상세히 분석하여 텍스트로 변환해주세요.
-
-            다음 정보를 포함해주세요:
-            1. 영상의 주요 주제와 핵심 메시지
-            2. 언급된 구체적인 사실, 통계, 주장
-            3. 화자의 주요 논점과 근거
-            4. 중요한 맥락이나 배경 정보
-
-            가능한 한 상세하고 정확하게 작성해주세요.
-            """
-
-            response = self.gemini_model.generate_content([prompt, video_part])
-            return response.text
-
-        finally:
-            # 4. 정리
-            try:
-                if local_video_path and os.path.exists(local_video_path):
-                    os.remove(local_video_path)
-                    print(f"🗑️ 로컬 파일 삭제 완료")
-
-                if gcs_blob_name:
-                    blob = self.bucket.blob(gcs_blob_name)
-                    if blob.exists():
-                        blob.delete()
-                        print(f"🗑️ GCS 파일 삭제 완료")
-            except Exception as cleanup_error:
-                print(f"⚠️ 정리 작업 실패: {cleanup_error}")
 
 
 class ArticleExtractor(BaseExtractor):
