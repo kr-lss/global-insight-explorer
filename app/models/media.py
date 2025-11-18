@@ -1,121 +1,53 @@
 """
 언론사 기본 정보
 국가별 대표 방송사/신문사 목록 (공영/민영 구분)
-추후 Firestore로 이전 예정
+Firestore에서 동적으로 로드
 """
+from google.cloud import firestore
+from app.config import config
 
-# 국가별 언론사 정보 (임시 데이터 - 내일 Firestore로 이전)
-MEDIA_DATA = {
-    "US": {
-        "name": "미국",
-        "broadcasting": [
-            {"name": "PBS", "type": "공영"},
-            {"name": "NBC", "type": "민영"},
-            {"name": "ABC", "type": "민영"},
-            {"name": "CBS", "type": "민영"},
-        ],
-        "newspapers": [
-            {"name": "The New York Times", "type": "민영"},
-            {"name": "Washington Post", "type": "민영"},
-        ],
-    },
-    "UK": {
-        "name": "영국",
-        "broadcasting": [
-            {"name": "BBC", "type": "공영"},
-            {"name": "Sky News", "type": "민영"},
-        ],
-        "newspapers": [
-            {"name": "The Guardian", "type": "민영"},
-            {"name": "The Times", "type": "민영"},
-        ],
-    },
-    "FR": {
-        "name": "프랑스",
-        "broadcasting": [
-            {"name": "France 2", "type": "공영"},
-            {"name": "TF1", "type": "민영"},
-            {"name": "France 24", "type": "공영"},
-        ],
-        "newspapers": [
-            {"name": "Le Monde", "type": "민영"},
-            {"name": "Le Figaro", "type": "민영"},
-        ],
-    },
-    "DE": {
-        "name": "독일",
-        "broadcasting": [
-            {"name": "ARD", "type": "공영"},
-            {"name": "ZDF", "type": "공영"},
-            {"name": "DW", "type": "공영"},
-        ],
-        "newspapers": [
-            {"name": "Süddeutsche Zeitung", "type": "민영"},
-            {"name": "Bild", "type": "민영"},
-        ],
-    },
-    "JP": {
-        "name": "일본",
-        "broadcasting": [
-            {"name": "NHK", "type": "공영"},
-            {"name": "NTV", "type": "민영"},
-        ],
-        "newspapers": [
-            {"name": "Asahi Shimbun", "type": "민영"},
-            {"name": "Yomiuri Shimbun", "type": "민영"},
-        ],
-    },
-    "CN": {
-        "name": "중국",
-        "broadcasting": [
-            {"name": "CCTV", "type": "공영"},
-            {"name": "CGTN", "type": "공영"},
-        ],
-        "newspapers": [
-            {"name": "People's Daily", "type": "공영"},
-            {"name": "인민일보", "type": "공영"},
-        ],
-    },
-    "RU": {
-        "name": "러시아",
-        "broadcasting": [
-            {"name": "Первый канал", "type": "공영"},
-            {"name": "Россия-1", "type": "공영"},
-            {"name": "RT", "type": "공영"},
-        ],
-        "newspapers": [
-            {"name": "Izvestia", "type": "민영"},
-            {"name": "Kommersant", "type": "민영"},
-        ],
-    },
-    "CA": {
-        "name": "캐나다",
-        "broadcasting": [
-            {"name": "CBC", "type": "공영"},
-            {"name": "Radio-Canada", "type": "공영"},
-            {"name": "CTV", "type": "민영"},
-        ],
-        "newspapers": [
-            {"name": "The Globe and Mail", "type": "민영"},
-            {"name": "Toronto Star", "type": "민영"},
-        ],
-    },
-    "KR": {
-        "name": "대한민국",
-        "broadcasting": [
-            {"name": "KBS", "type": "공영"},
-            {"name": "MBC", "type": "공영"},
-            {"name": "SBS", "type": "민영"},
-        ],
-        "newspapers": [
-            {"name": "조선일보", "type": "민영"},
-            {"name": "중앙일보", "type": "민영"},
-            {"name": "한겨레", "type": "민영"},
-            {"name": "경향신문", "type": "민영"},
-            {"name": "연합뉴스", "type": "공영"},
-        ],
-    },
-}
+# Firestore 클라이언트 초기화
+db = None
+try:
+    db = firestore.Client(project=config.GCP_PROJECT)
+    print("✅ (Media) Firestore 연결 성공")
+except Exception as e:
+    print(f"⚠️ (Media) Firestore 연결 실패: {e}")
+
+# 메모리 캐시 (Firestore 조회 최소화)
+_media_cache = {}
+_cache_loaded = False
+
+
+def _load_media_from_firestore():
+    """Firestore에서 모든 국가 언론사 정보를 로드하여 캐시"""
+    global _media_cache, _cache_loaded
+
+    if _cache_loaded:
+        return
+
+    if not db:
+        print("⚠️ Firestore 미연결, 빈 캐시 사용")
+        _cache_loaded = True
+        return
+
+    try:
+        # Firestore의 'countries' 컬렉션에서 모든 문서 로드
+        docs = db.collection('countries').stream()
+
+        for doc in docs:
+            _media_cache[doc.id] = doc.to_dict()
+
+        if _media_cache:
+            print(f"✅ Firestore에서 {len(_media_cache)}개 국가 정보 로드")
+        else:
+            print("⚠️ Firestore에 국가 데이터 없음")
+
+        _cache_loaded = True
+
+    except Exception as e:
+        print(f"⚠️ Firestore 로드 실패: {e}")
+        _cache_loaded = True
 
 
 def get_country_media(country_code):
@@ -132,7 +64,11 @@ def get_country_media(country_code):
             "newspapers": [{"name": "신문사명", "type": "공영/민영"}]
         }
     """
-    return MEDIA_DATA.get(country_code)
+    # 캐시 로드 (최초 1회만 실행)
+    if not _cache_loaded:
+        _load_media_from_firestore()
+
+    return _media_cache.get(country_code)
 
 
 def get_media_info(source_name):
@@ -151,7 +87,12 @@ def get_media_info(source_name):
         }
         또는 None (찾지 못한 경우)
     """
-    for country_code, country_data in MEDIA_DATA.items():
+    # 캐시 로드
+    if not _cache_loaded:
+        _load_media_from_firestore()
+
+    # 정확한 매칭
+    for country_code, country_data in _media_cache.items():
         # 방송사에서 찾기
         for media in country_data.get("broadcasting", []):
             if media["name"] == source_name:
@@ -172,14 +113,40 @@ def get_media_info(source_name):
                     "country": country_code,
                 }
 
+    # 부분 매칭 (예: "BBC News" → "BBC")
+    source_lower = source_name.lower()
+    for country_code, country_data in _media_cache.items():
+        # 방송사에서 부분 매칭
+        for media in country_data.get("broadcasting", []):
+            if media["name"].lower() in source_lower or source_lower in media["name"].lower():
+                return {
+                    "name": media["name"],
+                    "type": media["type"],
+                    "category": "broadcasting",
+                    "country": country_code,
+                }
+
+        # 신문사에서 부분 매칭
+        for media in country_data.get("newspapers", []):
+            if media["name"].lower() in source_lower or source_lower in media["name"].lower():
+                return {
+                    "name": media["name"],
+                    "type": media["type"],
+                    "category": "newspaper",
+                    "country": country_code,
+                }
+
     return None
 
 
 def get_all_countries():
     """모든 국가 목록 조회"""
+    if not _cache_loaded:
+        _load_media_from_firestore()
+
     return [
-        {"code": code, "name": data["name"]}
-        for code, data in MEDIA_DATA.items()
+        {"code": code, "name": data.get("name", "Unknown")}
+        for code, data in _media_cache.items()
     ]
 
 
@@ -208,6 +175,15 @@ def get_all_media_by_country(country_code):
         })
 
     return all_media
+
+
+def reload_media_cache():
+    """캐시 강제 새로고침 (관리 목적)"""
+    global _cache_loaded
+    _cache_loaded = False
+    _media_cache.clear()
+    _load_media_from_firestore()
+    return len(_media_cache)
 
 
 # 하위 호환성을 위한 함수 (기존 코드가 호출하는 경우)
