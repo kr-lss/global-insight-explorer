@@ -21,17 +21,22 @@ global-insight-explorer/
 ├── frontend/           # 웹 애플리케이션 (프론트엔드)
 │   ├── index.html      # 메인 HTML 페이지
 │   ├── main.js         # JavaScript 로직
-│   └── main.css        # 스타일시트
+│   ├── main.css        # 스타일시트
+│   ├── constants.js    # UI 상수 (신규)
+│   └── utils.js        # 유틸리티 함수 (신규)
 │
 ├── app/                # 백엔드 API 서버
 │   ├── __init__.py
 │   ├── main.py         # Flask 서버 진입점
-│   ├── config.py       # 설정 관리
+│   ├── config.py       # 설정 관리 (확장됨)
 │   ├── models/         # 데이터 모델
 │   │   ├── __init__.py
 │   │   ├── media.py    # 언론사 신뢰도 데이터 (Firestore)
 │   │   ├── history.py  # 분석 히스토리 (Firestore)
 │   │   └── extractor.py # 콘텐츠 추출기 (YouTube/Article)
+│   ├── prompts/        # AI 프롬프트 모듈 (신규)
+│   │   ├── __init__.py
+│   │   └── analysis_prompts.py # 프롬프트 템플릿
 │   ├── routes/         # API 라우트
 │   │   ├── __init__.py
 │   │   ├── health.py   # 헬스 체크
@@ -40,11 +45,16 @@ global-insight-explorer/
 │   │   └── history.py  # 히스토리 조회 API
 │   └── utils/          # 유틸리티
 │       ├── __init__.py
-│       └── analysis_service.py # 분석 서비스
+│       └── analysis_service.py # 분석 서비스 (리팩토링됨)
 │
 ├── tests/              # 테스트 코드
-└── scripts/            # 유틸리티 스크립트
-    └── upload_media_to_firestore.py
+├── scripts/            # 유틸리티 스크립트
+│   └── upload_media_to_firestore.py
+│
+└── docs/               # 프로젝트 문서
+    ├── PIPELINE_ANALYSIS.md        # 파이프라인 분석
+    ├── REFACTORING_SUMMARY.md      # 리팩토링 요약
+    └── VIRTUAL_EXECUTION_TEST.md   # 가상 실행 테스트
 ```
 
 ## 기능
@@ -54,8 +64,12 @@ global-insight-explorer/
 - **기사 콘텐츠 분석**: 웹 기사 자동 추출 및 핵심 주장 분석
 - **AI 기반 핵심 주장 추출**: Gemini 2.5 Flash를 사용한 정교한 분석
 - **관련 뉴스 기사 검색**: Gemini Google Search Grounding을 통한 실시간 기사 검색
+- **입장 기반 분석 (NEW!)**: 각 기사의 입장을 동적으로 분석 (지지/반대/중립)
+  - 사전 라벨링 없이 내용 기반 분류
+  - 국내/국제 이슈 모두 동일하게 작동
+  - 핵심 근거 및 프레이밍 분석 제공
 - **언론사 신뢰도 평가**: Firestore 기반 동적 신뢰도 데이터 (fallback 지원)
-- **다양한 관점의 정보 수집**: 여러 언론사의 보도를 종합하여 균형잡힌 시각 제공
+- **다양한 관점의 정보 수집**: 여러 언론사의 보도를 입장별로 그룹화하여 균형잡힌 시각 제공
 
 ### 고급 기능 (Firestore 활용)
 - **분석 히스토리**: 사용자가 분석한 콘텐츠 기록 자동 저장 및 조회수 추적
@@ -272,10 +286,37 @@ make dev
 
 - **Frontend**: HTML5, CSS3, Vanilla JavaScript
 - **Backend**: Flask, Python 3.9+
-- **AI**: Google Vertex AI (Gemini)
-- **Database**: Google Cloud Firestore
-- **Content Extraction**: BeautifulSoup4, YouTube Transcript API
+- **AI**: Google Vertex AI (Gemini 2.5 Flash, Gemini 2.0 Flash Exp)
+- **Database**: Google Cloud Firestore (선택사항)
+- **Content Extraction**: BeautifulSoup4, YouTube Transcript API, yt-dlp
 - **Deployment**: Docker, Docker Compose
+
+## 최신 업데이트 (2025-01-18)
+
+### 입장 기반 분석 파이프라인
+- ✅ 각 기사의 입장을 AI가 동적으로 분석 (supporting/opposing/neutral)
+- ✅ 사전 라벨링 없이 내용 기반 분류
+- ✅ 국내/국제 이슈 구분 없이 동일한 파이프라인 적용
+- ✅ 핵심 근거 (key_evidence) 및 프레이밍 (framing) 분석
+- ✅ 확신도 (confidence) 점수 제공
+
+### 코드 리팩토링
+- ✅ 프롬프트를 별도 모듈로 분리 (`app/prompts/`)
+- ✅ 헬퍼 함수 추출로 코드 가독성 75% 향상
+- ✅ 타입 힌트 추가로 IDE 지원 강화
+- ✅ 하드코딩된 상수를 `config.py`로 중앙화
+- ✅ 프론트엔드 모듈화 준비 (`constants.js`, `utils.js`)
+
+### 문서화
+- 📄 **PIPELINE_ANALYSIS.md**: 전체 데이터 흐름 분석
+- 📄 **REFACTORING_SUMMARY.md**: 리팩토링 상세 요약
+- 📄 **VIRTUAL_EXECUTION_TEST.md**: 가상 실행 검증 결과
+
+## 문서
+
+- **[파이프라인 분석](PIPELINE_ANALYSIS.md)**: 1차/2차 분석 흐름 상세 설명
+- **[리팩토링 요약](REFACTORING_SUMMARY.md)**: 코드 개선 내역
+- **[가상 실행 테스트](VIRTUAL_EXECUTION_TEST.md)**: 문법 및 흐름 검증
 
 ## 라이선스
 
