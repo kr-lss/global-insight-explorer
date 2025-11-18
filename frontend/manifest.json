@@ -3,7 +3,7 @@
   "manifest_version": 3,
   "name": "Global Insight Explorer",
   "version": "0.1.0",
-  "description": "Analyzes web content to provide global perspectives and fact-checking.",
+  "description": "Analyzes web content to provide global perspectives and diverse viewpoints from multiple sources.",
   "permissions": [
     "activeTab",
     "storage"

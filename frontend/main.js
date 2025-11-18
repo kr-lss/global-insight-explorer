@@ -144,7 +144,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    showLoading(true, '관련 기사를 검색하고 있습니다...');
+    showLoading(true, '다양한 관점의 출처를 찾고 있습니다...');
     clearError();
     factCheckBtn.disabled = true;
 
@@ -258,7 +258,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const results = analysis.results || [];
 
     if (results.length === 0) {
-      factCheckResultsDiv.innerHTML = '<p class="no-results">관련 기사를 찾을 수 없습니다.</p>';
+      factCheckResultsDiv.innerHTML = '<p class="no-results">다양한 관점의 출처를 찾을 수 없습니다.</p>';
       return;
     }
 
