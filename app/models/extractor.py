@@ -113,9 +113,17 @@ class YoutubeExtractor(BaseExtractor):
             local_video_path = os.path.join(temp_dir, unique_filename)
 
             ydl_opts = {
-                'format': 'bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4][height<=720]/best',
+                # ffmpeg 없이 작동: 이미 병합된 포맷만 선택
+                'format': 'best[ext=mp4][height<=720]/best[height<=720]/best',
                 'outtmpl': local_video_path,
-                'quiet': True,
+                'quiet': False,  # 디버깅을 위해 출력 활성화
+                'no_warnings': False,
+                # ffmpeg 병합 비활성화
+                'merge_output_format': None,
+                'postprocessors': [],
+                # 에러 시에도 계속 진행
+                'ignoreerrors': False,
+                'abort_on_error': False,
             }
 
             print(f"📥 영상 다운로드 중...")
