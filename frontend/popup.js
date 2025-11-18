@@ -313,23 +313,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const guideEl = document.createElement('div');
     guideEl.className = 'credibility-guide';
     guideEl.innerHTML = `
-      <h5>📊 신뢰도 점수 안내</h5>
+      <h5>📊 출처 정보 안내</h5>
       <div class="guide-content">
         <div class="guide-item">
           <span class="guide-badge high">80+</span>
-          <span>높은 신뢰도 - 국제적으로 인정받는 언론사</span>
+          <span>주요 국제 언론사</span>
         </div>
         <div class="guide-item">
           <span class="guide-badge medium">60-79</span>
-          <span>중간 신뢰도 - 일반적인 언론사</span>
+          <span>일반 언론사</span>
         </div>
         <div class="guide-item">
           <span class="guide-badge low">&lt;60</span>
-          <span>낮은 신뢰도 - 편향 가능성 주의</span>
+          <span>기타 출처</span>
         </div>
       </div>
       <p class="guide-note">
-        ⚠️ 신뢰도는 참고용입니다. 최종 판단은 사용자가 직접 하세요.
+        점수는 단순 참고용입니다. 각 출처의 내용을 직접 확인하고 판단하세요.
       </p>
     `;
     factCheckResultsDiv.appendChild(guideEl);
