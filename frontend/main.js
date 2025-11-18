@@ -251,7 +251,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // 관련 기사 및 신뢰도 표시
+  // 관련 기사 및 신뢰도 표시 (입장별 그룹화)
   function displaySourcesResults(analysis, articles) {
     factCheckResultsDiv.innerHTML = '';
 
@@ -272,103 +272,158 @@ document.addEventListener('DOMContentLoaded', () => {
       claimEl.textContent = `📌 "${result.claim}"`;
       resultEl.appendChild(claimEl);
 
-      // 관련 기사들
-      const relatedArticles = result.related_articles || [];
-      if (relatedArticles.length > 0) {
-        const articlesContainer = document.createElement('div');
-        articlesContainer.className = 'related-articles';
+      // 입장 분포 요약
+      const metrics = result.diversity_metrics || {};
+      const distribution = metrics.stance_distribution || {};
+      const totalCount = metrics.total_sources || 0;
 
-        const articlesTitle = document.createElement('h5');
-        articlesTitle.textContent = `관련 기사 (${relatedArticles.length}개)`;
-        articlesTitle.className = 'articles-title';
-        articlesContainer.appendChild(articlesTitle);
-
-        relatedArticles.forEach(articleIdx => {
-          const article = articles[articleIdx - 1]; // 1-based index
-          if (!article) return;
-
-          const articleEl = document.createElement('div');
-          articleEl.className = 'article-card';
-
-          // 신뢰도 점수에 따른 색상
-          const credibility = article.credibility || 50;
-          let credibilityClass = 'medium';
-          if (credibility >= 80) credibilityClass = 'high';
-          else if (credibility < 60) credibilityClass = 'low';
-
-          articleEl.innerHTML = `
-            <div class="article-header">
-              <div class="article-source">
-                <span class="source-name">${escapeHtml(article.source)}</span>
-                <span class="country-flag">${getCountryFlag(article.country)}</span>
-              </div>
-              <div class="credibility-badge ${credibilityClass}">
-                <span class="credibility-score">${credibility}</span>
-                <span class="credibility-label">신뢰도</span>
-              </div>
-            </div>
-            <div class="article-title">
-              <a href="${escapeHtml(article.url)}" target="_blank" rel="noopener noreferrer">
-                ${escapeHtml(article.title)}
-              </a>
-            </div>
-            <div class="article-meta">
-              <span class="bias-tag">${escapeHtml(article.bias || 'N/A')}</span>
-              <span class="date">${escapeHtml(article.published_date || 'N/A')}</span>
-            </div>
-            <div class="article-snippet">${escapeHtml(article.snippet || '')}</div>
-          `;
-
-          articlesContainer.appendChild(articleEl);
-        });
-
-        resultEl.appendChild(articlesContainer);
-      }
-
-      // 관점 분석
-      if (result.perspectives) {
-        const perspectivesDiv = document.createElement('div');
-        perspectivesDiv.className = 'perspectives-section';
-        perspectivesDiv.innerHTML = '<h5 class="section-subtitle">각 기사의 관점</h5>';
-
-        Object.entries(result.perspectives).forEach(([key, value]) => {
-          const perspectiveEl = document.createElement('div');
-          perspectiveEl.className = 'perspective-item';
-          perspectiveEl.innerHTML = `
-            <strong>${escapeHtml(key)}:</strong> ${escapeHtml(value)}
-          `;
-          perspectivesDiv.appendChild(perspectiveEl);
-        });
-
-        resultEl.appendChild(perspectivesDiv);
-      }
-
-      // 추가 맥락
-      if (result.additional_context) {
-        const contextDiv = document.createElement('div');
-        contextDiv.className = 'context-section';
-        contextDiv.innerHTML = `
-          <h5 class="section-subtitle">알아야 할 맥락</h5>
-          <p>${escapeHtml(result.additional_context)}</p>
-        `;
-        resultEl.appendChild(contextDiv);
-      }
-
-      // 다루는 국가들
-      if (result.coverage_countries && result.coverage_countries.length > 0) {
-        const coverageDiv = document.createElement('div');
-        coverageDiv.className = 'coverage-section';
-        coverageDiv.innerHTML = `
-          <h5 class="section-subtitle">보도 국가</h5>
-          <div class="tags">
-            ${result.coverage_countries.map(c => `<span class="tag">${escapeHtml(c)}</span>`).join('')}
+      if (totalCount > 0) {
+        const summaryEl = document.createElement('div');
+        summaryEl.className = 'stance-summary';
+        summaryEl.innerHTML = `
+          <h5 class="section-subtitle">입장 분포 (총 ${totalCount}개 기사)</h5>
+          <div class="stance-stats">
+            <span class="stance-stat supporting">✅ 지지: ${distribution.supporting || 0}개</span>
+            <span class="stance-stat opposing">❌ 반대: ${distribution.opposing || 0}개</span>
+            <span class="stance-stat neutral">⚪ 중립: ${distribution.neutral || 0}개</span>
           </div>
         `;
-        resultEl.appendChild(coverageDiv);
+        resultEl.appendChild(summaryEl);
+      }
+
+      // 지지 입장 기사들
+      const supportingEvidence = result.supporting_evidence || {};
+      if (supportingEvidence.count > 0) {
+        const supportingContainer = createStanceSection(
+          'supporting',
+          '✅ 이 주장을 지지하는 보도',
+          supportingEvidence.articles,
+          supportingEvidence.common_arguments
+        );
+        resultEl.appendChild(supportingContainer);
+      }
+
+      // 반대 입장 기사들
+      const opposingEvidence = result.opposing_evidence || {};
+      if (opposingEvidence.count > 0) {
+        const opposingContainer = createStanceSection(
+          'opposing',
+          '❌ 이 주장에 반대하는 보도',
+          opposingEvidence.articles,
+          opposingEvidence.common_arguments
+        );
+        resultEl.appendChild(opposingContainer);
+      }
+
+      // 중립 보도
+      const neutralCoverage = result.neutral_coverage || {};
+      if (neutralCoverage.count > 0) {
+        const neutralContainer = createStanceSection(
+          'neutral',
+          '⚪ 중립적/사실 중심 보도',
+          neutralCoverage.articles,
+          []
+        );
+        resultEl.appendChild(neutralContainer);
       }
 
       factCheckResultsDiv.appendChild(resultEl);
     });
+
+    // 헬퍼 함수: 입장별 섹션 생성
+    function createStanceSection(stanceType, title, articles, commonArguments) {
+      const container = document.createElement('div');
+      container.className = `stance-section stance-${stanceType}`;
+
+      // 섹션 헤더
+      const header = document.createElement('div');
+      header.className = 'stance-header';
+      header.innerHTML = `
+        <h5 class="stance-title">${title} (${articles.length}개)</h5>
+      `;
+      container.appendChild(header);
+
+      // 공통 논거 (있는 경우)
+      if (commonArguments && commonArguments.length > 0) {
+        const argsEl = document.createElement('div');
+        argsEl.className = 'common-arguments';
+        argsEl.innerHTML = `
+          <strong>공통 논거:</strong>
+          <ul>
+            ${commonArguments.map(arg => `<li>${escapeHtml(arg)}</li>`).join('')}
+          </ul>
+        `;
+        container.appendChild(argsEl);
+      }
+
+      // 기사 목록
+      const articlesContainer = document.createElement('div');
+      articlesContainer.className = 'related-articles';
+
+      articles.forEach(article => {
+        const articleEl = document.createElement('div');
+        articleEl.className = 'article-card';
+
+        // 신뢰도 점수에 따른 색상
+        const credibility = article.credibility || 50;
+        let credibilityClass = 'medium';
+        if (credibility >= 80) credibilityClass = 'high';
+        else if (credibility < 60) credibilityClass = 'low';
+
+        // 분석 정보
+        const analysis = article.analysis || {};
+        const confidence = analysis.confidence ? (analysis.confidence * 100).toFixed(0) : 'N/A';
+        const keyEvidence = analysis.key_evidence || [];
+        const framing = analysis.framing || '';
+
+        articleEl.innerHTML = `
+          <div class="article-header">
+            <div class="article-source">
+              <span class="source-name">${escapeHtml(article.source)}</span>
+              <span class="country-flag">${getCountryFlag(article.country)}</span>
+            </div>
+            <div class="article-badges">
+              <div class="credibility-badge ${credibilityClass}">
+                <span class="credibility-score">${credibility}</span>
+                <span class="credibility-label">신뢰도</span>
+              </div>
+              <div class="confidence-badge">
+                <span class="confidence-score">${confidence}%</span>
+                <span class="confidence-label">확신도</span>
+              </div>
+            </div>
+          </div>
+          <div class="article-title">
+            <a href="${escapeHtml(article.url)}" target="_blank" rel="noopener noreferrer">
+              ${escapeHtml(article.title)}
+            </a>
+          </div>
+          <div class="article-meta">
+            <span class="bias-tag">${escapeHtml(article.bias || 'N/A')}</span>
+            <span class="date">${escapeHtml(article.published_date || 'N/A')}</span>
+          </div>
+          <div class="article-snippet">${escapeHtml(article.snippet || '')}</div>
+          ${keyEvidence.length > 0 ? `
+            <div class="key-evidence">
+              <strong>핵심 근거:</strong>
+              <ul>
+                ${keyEvidence.map(ev => `<li>${escapeHtml(ev)}</li>`).join('')}
+              </ul>
+            </div>
+          ` : ''}
+          ${framing ? `
+            <div class="framing">
+              <strong>프레임:</strong> ${escapeHtml(framing)}
+            </div>
+          ` : ''}
+        `;
+
+        articlesContainer.appendChild(articleEl);
+      });
+
+      container.appendChild(articlesContainer);
+      return container;
+    }
 
     // 신뢰도 안내
     const guideEl = document.createElement('div');

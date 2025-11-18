@@ -801,3 +801,170 @@ body {
     justify-content: center;
   }
 }
+
+/* Stance-based Analysis Styles */
+.stance-summary {
+  background: white;
+  border-radius: var(--border-radius);
+  padding: var(--spacing-md);
+  margin: var(--spacing-md) 0;
+  border: 2px solid var(--border-color);
+}
+
+.stance-stats {
+  display: flex;
+  gap: var(--spacing-md);
+  flex-wrap: wrap;
+  margin-top: var(--spacing-sm);
+}
+
+.stance-stat {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-radius: 20px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  white-space: nowrap;
+}
+
+.stance-stat.supporting {
+  background-color: #d4edda;
+  color: #155724;
+}
+
+.stance-stat.opposing {
+  background-color: #f8d7da;
+  color: #721c24;
+}
+
+.stance-stat.neutral {
+  background-color: #e2e3e5;
+  color: #383d41;
+}
+
+/* Stance Sections */
+.stance-section {
+  margin-top: var(--spacing-lg);
+  padding: var(--spacing-md);
+  border-radius: var(--border-radius);
+  background: white;
+}
+
+.stance-section.stance-supporting {
+  border-left: 4px solid #28a745;
+}
+
+.stance-section.stance-opposing {
+  border-left: 4px solid #dc3545;
+}
+
+.stance-section.stance-neutral {
+  border-left: 4px solid #6c757d;
+}
+
+.stance-header {
+  margin-bottom: var(--spacing-md);
+}
+
+.stance-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: var(--spacing-sm);
+}
+
+/* Common Arguments */
+.common-arguments {
+  background: #f8f9fa;
+  padding: var(--spacing-md);
+  border-radius: var(--border-radius);
+  margin-bottom: var(--spacing-md);
+}
+
+.common-arguments ul {
+  margin: var(--spacing-xs) 0 0 var(--spacing-lg);
+  padding: 0;
+}
+
+.common-arguments li {
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: var(--spacing-xs);
+}
+
+/* Key Evidence */
+.key-evidence {
+  background: #fff3cd;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--border-radius);
+  margin-top: var(--spacing-sm);
+  border-left: 3px solid #ffc107;
+}
+
+.key-evidence ul {
+  margin: var(--spacing-xs) 0 0 var(--spacing-lg);
+  padding: 0;
+}
+
+.key-evidence li {
+  color: #856404;
+  line-height: 1.5;
+  margin-bottom: var(--spacing-xs);
+  font-size: 0.9rem;
+}
+
+/* Framing */
+.framing {
+  background: #e7f3ff;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--border-radius);
+  margin-top: var(--spacing-sm);
+  border-left: 3px solid #1976d2;
+  font-size: 0.9rem;
+  color: #0d47a1;
+}
+
+/* Confidence Badge */
+.article-badges {
+  display: flex;
+  gap: var(--spacing-xs);
+  flex-wrap: wrap;
+}
+
+.confidence-badge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: 16px;
+  font-weight: 600;
+  background-color: #e3f2fd;
+  color: #1565c0;
+}
+
+.confidence-score {
+  font-size: 1rem;
+}
+
+.confidence-label {
+  font-size: 0.8rem;
+  opacity: 0.9;
+}
+
+/* Responsive adjustments for stance sections */
+@media (max-width: 768px) {
+  .stance-stats {
+    flex-direction: column;
+  }
+
+  .stance-stat {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .article-badges {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}

@@ -201,6 +201,7 @@ class AnalysisService:
     def _find_related_articles_with_gemini(
         self, original_content: str, claims: list, articles: list
     ):
+        """입장 기반 분석 - 국내/국제 이슈 모두 적용 가능"""
         if not gemini:
             raise Exception("Gemini API를 사용할 수 없습니다.")
 
@@ -213,8 +214,12 @@ class AnalysisService:
         )
 
         prompt = f"""
-        당신은 편견 없는 정보 분석가입니다. 원본 콘텐츠의 주장과 수집된 기사들의 연관성을 분석해주세요.
-        **절대로 주장의 참/거짓을 판단하지 마세요.**
+        당신은 편견 없는 정보 분석가입니다.
+        **각 기사가 선택한 주장에 대해 어떤 입장인지 분석해주세요.**
+
+        중요: 언론사의 "고정된 성향"이 아니라, "이 기사의 내용"만 기준으로 판단하세요.
+        - 같은 언론사도 이슈마다 다른 입장을 가질 수 있습니다.
+        - 절대로 사전에 정해진 라벨(보수/진보)을 사용하지 마세요.
 
         [원본 콘텐츠 요약]
         {original_content}
@@ -226,41 +231,171 @@ class AnalysisService:
         {articles_text}
 
         [요청 작업]
-        각 주장에 대해, 수집된 기사 목록 중 어떤 기사가 가장 관련 있는지 분석하고, 각 기사가 어떤 새로운 정보나 다른 관점을 제공하는지 설명해주세요.
+        각 기사에 대해 다음을 분석하세요:
+        1. 이 기사는 주장에 대해 어떤 입장인가?
+           - supporting: 주장을 지지하거나 동의하는 내용
+           - opposing: 주장에 반대하거나 부정하는 내용
+           - neutral: 입장 없이 사실만 보도하거나 양쪽 입장 병기
+
+        2. 확신도 (0.0 ~ 1.0): 입장이 얼마나 명확한가?
+
+        3. 핵심 근거: 이 기사가 제시하는 구체적인 증거나 인용문 (1-2개)
+
+        4. 프레이밍: 이 기사가 사용하는 서술 방식이나 관점
 
         [응답 형식 (JSON)]
         {{
           "results": [
             {{
               "claim": "사용자가 선택한 첫 번째 주장",
-              "related_articles": [
-                  {{
-                      "article_index": 1, // 기사 번호
-                      "relevance_score": 90, // 0-100점
-                      "perspective": "이 기사는 주장에 대해 구체적인 통계를 제공하며, 다른 원인을 제시합니다."
-                  }}
+              "article_analyses": [
+                {{
+                  "article_index": 1,
+                  "stance": "supporting",
+                  "confidence": 0.85,
+                  "key_evidence": [
+                    "첫 번째 핵심 증거나 인용문",
+                    "두 번째 핵심 증거나 인용문"
+                  ],
+                  "framing": "이 기사가 사용하는 프레임 설명"
+                }},
+                {{
+                  "article_index": 2,
+                  "stance": "opposing",
+                  "confidence": 0.80,
+                  "key_evidence": [
+                    "첫 번째 핵심 증거나 인용문",
+                    "두 번째 핵심 증거나 인용문"
+                  ],
+                  "framing": "이 기사가 사용하는 프레임 설명"
+                }},
+                {{
+                  "article_index": 3,
+                  "stance": "neutral",
+                  "confidence": 0.70,
+                  "key_evidence": [
+                    "첫 번째 핵심 증거나 인용문",
+                    "두 번째 핵심 증거나 인용문"
+                  ],
+                  "framing": "이 기사가 사용하는 프레임 설명"
+                }}
               ],
-              "missing_context": "원본 콘텐츠에는 없지만, 이 주장을 이해하는 데 필요한 추가적인 배경지식이나 맥락을 서술합니다.",
-              "coverage_countries": ["미국", "영국"] // 이 주장을 주로 다룬 국가
+              "stance_summary": {{
+                "supporting_count": 0,
+                "opposing_count": 0,
+                "neutral_count": 0,
+                "common_supporting_arguments": [
+                  "지지 입장의 공통 논거",
+                  "또 다른 공통 논거"
+                ],
+                "common_opposing_arguments": [
+                  "반대 입장의 공통 논거",
+                  "또 다른 공통 논거"
+                ]
+              }}
             }}
           ]
         }}
 
         [주의사항]
-        - `related_articles`에는 관련성 높은 기사만 포함시키세요.
-        - `perspective`는 기사의 객관적인 내용을 요약해야 합니다. (예: 지지/반대/중립이 아닌 정보 요약)
-        - `missing_context`는 모든 기사를 종합하여 추론한 내용을 담습니다.
+        - 절대로 주장의 참/거짓을 판단하지 마세요.
+        - 오직 "이 기사의 내용"을 기준으로 입장을 분석하세요.
+        - 언론사 이름으로 입장을 추측하지 마세요.
         - 반드시 JSON 객체만 출력하고 다른 설명은 덧붙이지 마세요.
         """
+
         try:
             response = gemini.generate_content(prompt)
             result_text = (
                 response.text.strip().replace('```json', '').replace('```', '').strip()
             )
-            return json.loads(result_text)
+            parsed_result = json.loads(result_text)
+
+            # 유효성 검증
+            if 'results' not in parsed_result:
+                raise ValueError("AI 응답에 'results' 키가 없습니다.")
+
+            if not isinstance(parsed_result['results'], list):
+                raise ValueError("AI 응답의 'results'가 배열이 아닙니다.")
+
+            # 결과를 사용자 친화적으로 재구조화
+            return self._restructure_by_stance(parsed_result, articles)
+
+        except json.JSONDecodeError as e:
+            print(f"❌ JSON 파싱 실패: {e}")
+            print(f"AI 응답 원본 (처음 500자): {result_text[:500]}")
+            raise Exception(f"AI 응답을 파싱할 수 없습니다. 다시 시도해주세요.")
         except Exception as e:
             print(f"❌ AI 2차 분석 실패: {e}")
-            raise Exception(f"관련 기사 분석 중 오류가 발생했습니다: {e}")
+            raise Exception(f"입장 분석 중 오류가 발생했습니다: {e}")
+
+    def _restructure_by_stance(self, analysis_result, articles):
+        """
+        AI 분석 결과를 입장별로 그룹화
+        국내/국제 구분 없이 동일하게 작동
+        """
+        restructured = []
+
+        for claim_result in analysis_result.get('results', []):
+            supporting_articles = []
+            opposing_articles = []
+            neutral_articles = []
+
+            # 각 기사를 입장별로 분류
+            for analysis in claim_result.get('article_analyses', []):
+                article_idx = analysis.get('article_index') - 1
+                if article_idx < 0 or article_idx >= len(articles):
+                    continue
+
+                article = articles[article_idx].copy()
+                article['analysis'] = {
+                    'stance': analysis.get('stance'),
+                    'confidence': analysis.get('confidence'),
+                    'key_evidence': analysis.get('key_evidence', []),
+                    'framing': analysis.get('framing', '')
+                }
+
+                # 입장별로 분류
+                stance = analysis.get('stance')
+                if stance == 'supporting':
+                    supporting_articles.append(article)
+                elif stance == 'opposing':
+                    opposing_articles.append(article)
+                elif stance == 'neutral':
+                    neutral_articles.append(article)
+
+            # 확신도 순으로 정렬
+            supporting_articles.sort(key=lambda x: x['analysis']['confidence'], reverse=True)
+            opposing_articles.sort(key=lambda x: x['analysis']['confidence'], reverse=True)
+            neutral_articles.sort(key=lambda x: x['analysis']['confidence'], reverse=True)
+
+            restructured.append({
+                'claim': claim_result.get('claim'),
+                'supporting_evidence': {
+                    'count': len(supporting_articles),
+                    'articles': supporting_articles,
+                    'common_arguments': claim_result.get('stance_summary', {}).get('common_supporting_arguments', [])
+                },
+                'opposing_evidence': {
+                    'count': len(opposing_articles),
+                    'articles': opposing_articles,
+                    'common_arguments': claim_result.get('stance_summary', {}).get('common_opposing_arguments', [])
+                },
+                'neutral_coverage': {
+                    'count': len(neutral_articles),
+                    'articles': neutral_articles
+                },
+                'diversity_metrics': {
+                    'total_sources': len(supporting_articles) + len(opposing_articles) + len(neutral_articles),
+                    'stance_distribution': {
+                        'supporting': len(supporting_articles),
+                        'opposing': len(opposing_articles),
+                        'neutral': len(neutral_articles)
+                    }
+                }
+            })
+
+        return {'results': restructured}
 
     # --- 캐싱 헬퍼 ---
     def _get_cache(self, url: str):
