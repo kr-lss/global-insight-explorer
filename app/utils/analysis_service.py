@@ -16,6 +16,8 @@ from google.api_core.exceptions import GoogleAPICallError
 from app.models.extractor import BaseExtractor, YoutubeExtractor, ArticleExtractor
 from app.models.media import get_media_credibility
 from app.config import config
+from app.utils.gdelt_search import GDELTSearcher
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # --- 초기화 ---
 gemini = None
@@ -41,6 +43,7 @@ class AnalysisService:
             'youtube': YoutubeExtractor(),
             'article': ArticleExtractor(),
         }
+        self.gdelt = GDELTSearcher()  # GDELT 검색 엔진 초기화
 
     def _get_extractor(self, input_type: str) -> BaseExtractor:
         extractor = self.extractors.get(input_type)
@@ -216,7 +219,7 @@ class AnalysisService:
 
     def _search_real_articles(self, keywords: list, target_countries: list = None):
         """
-        Gemini Google Search Grounding (최신 SDK 문법 적용)
+        GDELT Hybrid 검색: GDELT (무료) → Google Search (유료 폴백)
 
         Args:
             keywords: 영어 검색 키워드 리스트
@@ -233,51 +236,143 @@ class AnalysisService:
             else:
                 flat_keywords.append(k)
 
+        # 1️⃣ GDELT 검색 시도 (무료, 빠름, 글로벌)
+        print(f"📊 [1/2] GDELT 검색 중... (키워드: {flat_keywords[:3]}, 국가: {target_countries})")
+        gdelt_results = []
+        try:
+            gdelt_results = self.gdelt.search(
+                keywords=flat_keywords[:5],  # 최대 5개 키워드
+                target_countries=target_countries,
+                days=7,  # 최근 7일
+                limit=30  # 최대 30개
+            )
+        except Exception as e:
+            print(f"⚠️ GDELT 검색 실패: {e}")
+
+        # 2️⃣ 병렬 본문 추출 (ThreadPool 10개 워커)
+        if gdelt_results:
+            print(f"🔄 병렬 본문 추출 중... ({len(gdelt_results)}개 기사)")
+            extracted = self._extract_contents_parallel(gdelt_results)
+            print(f"✅ 추출 완료: {len(extracted)}개")
+
+            # 충분한 결과가 있으면 반환 (Google 비용 절약)
+            if len(extracted) >= 5:
+                return extracted
+
+            # 5개 미만이면 Google 폴백 필요
+            print(f"⚠️ GDELT 결과 부족 ({len(extracted)}개) → Google Search 폴백")
+
+        # 3️⃣ Google Search 폴백 (GDELT 실패 또는 결과 < 5개)
+        print(f"🔍 [2/2] Google Search 폴백...")
+        google_results = self._search_google_fallback(flat_keywords, target_countries)
+
+        # GDELT + Google 합치기
+        all_results = (extracted if gdelt_results else []) + google_results
+        return all_results
+
+    def _extract_contents_parallel(self, articles_meta: list):
+        """
+        병렬 처리로 기사 본문 추출 (ThreadPool)
+
+        Args:
+            articles_meta: GDELT 검색 결과 [{url, source, title, date, tone, country}, ...]
+
+        Returns:
+            본문이 추출된 기사 리스트
+        """
+        extracted = []
+        extractor = self.extractors['article']
+
+        def fetch_one(meta):
+            """단일 기사 추출 (병렬 실행 함수)"""
+            try:
+                url = meta.get('url', '')
+                if not url or url == '#':
+                    return None
+
+                # 본문 추출
+                content = extractor.extract(url)
+
+                # 너무 짧으면 무시
+                if not content or len(content) < 100:
+                    return None
+
+                # 메타데이터에 본문 추가
+                meta['content'] = content
+                meta['snippet'] = content[:500]  # 미리보기
+
+                # 신뢰도 추가 (국가/출처 기반)
+                if 'credibility' not in meta:
+                    meta['credibility'] = get_media_credibility(
+                        meta.get('source', ''),
+                        meta.get('country', '')
+                    )
+
+                print(f"✅ 추출 성공: {meta.get('source', 'Unknown')} ({meta.get('country', 'Unknown')})")
+                return meta
+
+            except Exception as e:
+                print(f"⚠️ 추출 실패: {meta.get('url', 'unknown')} - {e}")
+                return None
+
+        # ThreadPool 병렬 실행 (max_workers=10)
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(fetch_one, item) for item in articles_meta]
+
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    extracted.append(result)
+
+        return extracted
+
+    def _search_google_fallback(self, keywords: list, target_countries: list = None):
+        """
+        Google Search 폴백 (GDELT 실패 시)
+
+        Args:
+            keywords: 영어 검색 키워드 리스트
+            target_countries: 타겟 국가 코드 리스트
+
+        Returns:
+            검색 결과 리스트
+        """
+        if not keywords:
+            return []
+
         # 기본 쿼리
-        base_query = " ".join(flat_keywords[:7])  # 너무 길면 잘림, 최대 7단어 권장
+        base_query = " ".join(keywords[:7])  # 최대 7단어
         query = base_query
 
-        # [수정] 타겟 국가가 있으면 쿼리에 추가하여 검색 정확도 향상
+        # 타겟 국가가 있으면 쿼리에 추가
         if target_countries and len(target_countries) > 0:
-            # 예: "North Korea Missile (US OR CN OR KR)"
             country_query = " OR ".join(target_countries)
             query = f"{base_query} ({country_query})"
 
         print(f"🔍 Google Search Query: {query}")
 
         try:
-            # ✅ [수정됨] 최신 Vertex AI SDK 방식
+            # Google Search Grounding 시도
             search_tool = Tool.from_google_search_retrieval(
                 GoogleSearchRetrieval()
             )
-            
-            # 검색용 모델 별도 초기화 (Grounding 도구 포함)
+
             model = GenerativeModel(
                 'gemini-2.0-flash',
                 tools=[search_tool]
             )
-            
-            # Grounding을 강제하기 위한 프롬프트
-            prompt = f"Search for latest news articles about: {query}. Provide details."
-            
-            response = model.generate_content(prompt)
-            
-            # TODO: Grounding Metadata에서 실제 URL 추출 로직을 개선해야 함.
-            # 현재는 Grounding API의 특성상 텍스트 생성에 집중되어 있으므로,
-            # 정확한 URL 리스트가 필요하면 Custom Search JSON API를 병행하는 것이 좋음.
-            # 일단은 구조 유지를 위해 샘플 데이터(Fallback) 또는 Gemini가 생성한 텍스트 내 정보를 활용
-            
-            # TODO: Grounding 응답 파싱 로직 개선 필요 (현재는 Fallback 사용)
-            # 실제로는 response.candidates[0].grounding_metadata.search_entry_point 등을 파싱해야 함
 
-            # 임시: 검색은 성공했지만 URL을 구조적으로 못 가져올 경우를 대비해 샘플 반환
-            # (실제 프로덕션에서는 Custom Search API가 더 적합)
-            print("⚠️ Google Search Grounding 완료 (URL 추출 로직 보완 필요)")
-            return self._get_sample_articles(flat_keywords, target_countries)
+            prompt = f"Search for latest news articles about: {query}. Provide details."
+            response = model.generate_content(prompt)
+
+            # TODO: Grounding Metadata에서 실제 URL 추출
+            # 현재는 구조적 URL 추출이 어려우므로 샘플 반환
+            print("⚠️ Google Search 완료 (URL 추출 로직 보완 필요)")
+            return self._get_sample_articles(keywords, target_countries)
 
         except Exception as e:
-            print(f"⚠️ 검색 실패 ({e}). 샘플 데이터 사용.")
-            return self._get_sample_articles(flat_keywords, target_countries)
+            print(f"⚠️ Google Search 실패: {e}")
+            return self._get_sample_articles(keywords, target_countries)
 
     def _compare_perspectives_with_gemini(
         self, original_content: str, claims: list, articles: list
