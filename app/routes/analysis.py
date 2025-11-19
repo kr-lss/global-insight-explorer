@@ -43,30 +43,34 @@ def find_sources():
     """2차 분석: 선택된 주장에 대한 관련 기사 검색 및 분석"""
     try:
         data = request.get_json()
-        if not data or 'url' not in data or 'claims_data' not in data:
-            return jsonify({'error': 'URL과 주장 데이터가 필요합니다'}), 400
 
-        claims_data = data['claims_data']
+        # 필수 파라미터 확인
+        if not data or 'url' not in data:
+            return jsonify({'error': 'URL이 필요합니다'}), 400
 
-        # 데이터 검증: claims_data가 리스트이고 각 항목이 필요한 키를 가지고 있는지 확인
-        if not isinstance(claims_data, list) or len(claims_data) == 0:
-            return jsonify({'error': '최소 하나의 주장을 선택해주세요'}), 400
+        # claims_data 확인 (없으면 에러)
+        claims_data = data.get('claims_data')
 
-        # 서비스에 2차 분석 요청 위임
+        if not claims_data or not isinstance(claims_data, list) or len(claims_data) == 0:
+            # 하위 호환성: selected_claims가 있으면 변환 시도 (선택사항)
+            if 'selected_claims' in data:
+                claims_data = [{'claim_kr': c, 'search_keywords_en': [], 'target_country_codes': []} for c in data['selected_claims']]
+            else:
+                return jsonify({'error': '최소 하나의 주장을 선택해주세요'}), 400
+
+        # 서비스 호출
         analysis_result, articles = analysis_service.find_sources_for_claims(
             url=data['url'],
             input_type=data.get('inputType', 'youtube'),
-            claims_data=claims_data  # 구조화된 데이터 전달
+            claims_data=claims_data
         )
 
-        return jsonify(
-            {
-                'success': True,
-                'result': analysis_result,
-                'articles': articles,
-                'articles_count': len(articles),
-            }
-        )
+        return jsonify({
+            'success': True,
+            'result': analysis_result,
+            'articles': articles,
+            'articles_count': len(articles),
+        })
 
     except Exception as e:
         print(f"❌ /api/find-sources 에러: {e}")
