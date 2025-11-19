@@ -183,7 +183,7 @@ class AnalysisService:
         final_articles = list(unique_articles)
 
         # 2. AI 검증 (한국어로 결과 리포트)
-        print("🤖 Gemini로 2차 분석 (팩트체크 & 관점 비교) 중...")
+        print("🤖 Gemini로 2차 분석 (글로벌 관점 비교) 중...")
 
         # claims_data에서 claim_kr만 추출하여 AI에게 전달
         selected_claim_texts = [c['claim_kr'] for c in claims_data]
