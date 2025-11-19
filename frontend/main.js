@@ -135,21 +135,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 2차 분석: 다양한 관점 찾기
   factCheckBtn.addEventListener('click', async () => {
-    const selectedClaims = Array.from(
-      document.querySelectorAll('#keyClaims input[type="checkbox"]:checked')
-    ).map(input => input.value);
+    const checkboxes = document.querySelectorAll('#keyClaims input[type="checkbox"]');
+
+    // 선택된 체크박스에서 완전한 데이터 수집
+    const selectedClaimsData = Array.from(checkboxes)
+      .filter(cb => cb.checked)
+      .map(cb => ({
+        claim_kr: cb.value,
+        search_keywords_en: JSON.parse(cb.dataset.keywords || '[]'),
+        target_country_codes: JSON.parse(cb.dataset.countries || '[]')
+      }));
 
     // 직접 입력한 주장 가져오기
     const customClaimInput = document.getElementById('customClaimInput');
     const customClaim = customClaimInput ? customClaimInput.value.trim() : '';
 
-    // 선택된 주장과 직접 입력한 주장 합치기
-    const allClaims = [...selectedClaims];
+    // 직접 입력한 주장은 claim_kr만 있고 나머지는 빈 배열
     if (customClaim) {
-      allClaims.push(customClaim);
+      selectedClaimsData.push({
+        claim_kr: customClaim,
+        search_keywords_en: [],  // 백엔드에서 처리
+        target_country_codes: []
+      });
     }
 
-    if (allClaims.length === 0) {
+    if (selectedClaimsData.length === 0) {
       showError('위의 주장을 선택하거나, 직접 주장을 입력해주세요');
       return;
     }
@@ -168,9 +178,7 @@ document.addEventListener('DOMContentLoaded', () => {
         body: JSON.stringify({
           url,
           inputType,
-          selected_claims: allClaims,
-          search_keywords: currentAnalysis?.search_keywords?.flat() || allClaims,
-          related_countries: currentAnalysis?.related_countries || []
+          claims_data: selectedClaimsData  // 구조화된 데이터 전송
         }),
       });
 
@@ -213,15 +221,39 @@ document.addEventListener('DOMContentLoaded', () => {
       analysis.key_claims.forEach((claim, index) => {
         const claimEl = document.createElement('div');
         claimEl.className = 'claim-item';
+
+        // claim이 객체인 경우와 문자열인 경우(구버전 호환) 모두 처리
+        const claimText = typeof claim === 'string' ? claim : claim.claim_kr;
+        const searchKeywords = typeof claim === 'object' ? (claim.search_keywords_en || []) : [];
+        const targetCountries = typeof claim === 'object' ? (claim.target_country_codes || []) : [];
+
         claimEl.innerHTML = `
-          <input type="checkbox" id="claim-${index}" value="${escapeHtml(claim)}" class="claim-checkbox">
-          <label for="claim-${index}" class="claim-label">${escapeHtml(claim)}</label>
+          <input type="checkbox"
+                 id="claim-${index}"
+                 value="${escapeHtml(claimText)}"
+                 data-keywords='${JSON.stringify(searchKeywords)}'
+                 data-countries='${JSON.stringify(targetCountries)}'
+                 class="claim-checkbox">
+          <label for="claim-${index}" class="claim-label">${escapeHtml(claimText)}</label>
         `;
         claimsContainer.appendChild(claimEl);
       });
 
       keyClaimsDiv.appendChild(claimsContainer);
     }
+
+    // 커스텀 주장 입력 추가
+    const customClaimDiv = document.createElement('div');
+    customClaimDiv.className = 'custom-claim-box';
+    customClaimDiv.style.cssText = 'margin-top: 15px; padding-top: 15px; border-top: 1px solid #eee;';
+    customClaimDiv.innerHTML = `
+      <label for="customClaimInput" style="display:block; margin-bottom:5px; font-size:0.9rem; color:#666;">
+        직접 궁금한 점 입력 (선택사항):
+      </label>
+      <input type="text" id="customClaimInput" class="url-input"
+             placeholder="예: 이 영상에서 말하는 금리 인상 시기가 언제인가요?">
+    `;
+    keyClaimsDiv.appendChild(customClaimDiv);
 
     // 요약
     if (analysis.summary) {

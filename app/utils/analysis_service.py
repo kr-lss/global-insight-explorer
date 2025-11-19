@@ -133,45 +133,87 @@ class AnalysisService:
     # 2️⃣ 2차 분석 (Find Sources) - 수정된 로직 대응
     # ==================================================================
     def find_sources_for_claims(
-        self, url: str, input_type: str, selected_claims: list, search_keywords: list
+        self, url: str, input_type: str, claims_data: list
     ):
         """
         선택된 주장에 대한 교차 검증 (Google Search + GDELT 예정)
+
+        Args:
+            url: 원본 콘텐츠 URL
+            input_type: 콘텐츠 타입 (youtube/article)
+            claims_data: 주장 정보 리스트
+                [
+                    {
+                        "claim_kr": "한국어 주장",
+                        "search_keywords_en": ["keyword1", "keyword2"],
+                        "target_country_codes": ["US", "CN"]
+                    },
+                    ...
+                ]
         """
         # 원본 콘텐츠 다시 추출 (컨텍스트용)
         extractor = self._get_extractor(input_type)
         original_content = extractor.extract(url)
 
-        # 1. 기사 검색 (영어 키워드로 검색)
-        # TODO: 향후 여기에 GDELT 검색 로직을 병합할 예정 (Hybrid Search)
-        articles = self._search_real_articles(search_keywords)
+        # 주장별로 검색 및 분석 수행
+        all_articles = []
+
+        for claim_data in claims_data:
+            claim_kr = claim_data.get('claim_kr', '')
+            search_keywords = claim_data.get('search_keywords_en', [])
+            target_countries = claim_data.get('target_country_codes', [])
+
+            # 검색 키워드가 없으면 한국어 주장을 그대로 사용 (임시 방편)
+            if not search_keywords:
+                search_keywords = [claim_kr]
+
+            # 1. 기사 검색 (영어 키워드 + 타겟 국가 정보 활용)
+            print(f"🔍 '{claim_kr[:30]}...' 검색 중 (대상 국가: {target_countries or '전체'})")
+            articles = self._search_real_articles(search_keywords, target_countries)
+            all_articles.extend(articles)
 
         # 2. AI 검증 (한국어로 결과 리포트)
         print("🤖 Gemini로 2차 분석 (팩트체크 & 관점 비교) 중...")
+
+        # claims_data에서 claim_kr만 추출
+        selected_claims = [claim['claim_kr'] for claim in claims_data]
+
         analysis_result = self._compare_perspectives_with_gemini(
-            original_content, selected_claims, articles
+            original_content, selected_claims, all_articles
         )
         print("✅ 2차 분석 완료")
 
-        return analysis_result, articles
+        return analysis_result, all_articles
 
-    def _search_real_articles(self, keywords: list):
+    def _search_real_articles(self, keywords: list, target_countries: list = None):
         """
         Gemini Google Search Grounding (최신 SDK 문법 적용)
+
+        Args:
+            keywords: 영어 검색 키워드 리스트
+            target_countries: 타겟 국가 코드 리스트 (예: ["US", "CN"])
         """
         if not keywords:
             return []
-            
-        # 키워드가 리스트의 리스트로 들어올 수 있음 (1차 분석 구조 변경 때문)
+
+        # 키워드가 리스트의 리스트로 들어올 수 있음
         flat_keywords = []
         for k in keywords:
             if isinstance(k, list):
                 flat_keywords.extend(k)
             else:
                 flat_keywords.append(k)
-        
+
+        # 검색 쿼리 생성 (타겟 국가 정보 활용)
         query = " ".join(flat_keywords[:7])  # 너무 길면 잘림, 최대 7단어 권장
+
+        # 타겟 국가가 지정되었으면 쿼리에 추가 (검색 정확도 향상)
+        if target_countries and len(target_countries) > 0:
+            country_names = " OR ".join(target_countries)
+            query = f"{query} ({country_names})"
+
         print(f"🔍 Google Search Grounding 검색: {query}")
+        print(f"   타겟 국가: {target_countries or '전체'}")
 
         try:
             # ✅ [수정됨] 최신 Vertex AI SDK 방식
