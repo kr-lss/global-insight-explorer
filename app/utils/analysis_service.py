@@ -202,17 +202,18 @@ class AnalysisService:
             }
 
     # ==================================================================
-    # 2️⃣ 2차 분석 (Find Sources) - 사용자 제안 완벽 반영 + 커스텀 기능
+    # 2️⃣ 2차 분석 (Find Sources) - AI 추론 없이 검색만 수행
     # ==================================================================
     def find_sources_for_claims(
         self, url: str, input_type: str, claims_data: list
     ):
         """
-        선택된 주장에 대한 교차 검증 (Google Search + GDELT 예정)
+        [Step 2] 확정된 검색 전략(claims_data)으로 실제 GDELT 검색 수행
+        * 이제 이 함수는 AI 추론을 하지 않고, 전달받은 키워드로 검색 수행에만 집중합니다.
 
         Args:
-            url: 원본 콘텐츠 URL
-            input_type: 콘텐츠 타입 (youtube/article)
+            url: 원본 콘텐츠 URL (현재는 사용하지 않음)
+            input_type: 콘텐츠 타입 (현재는 사용하지 않음)
             claims_data: 주장 정보 리스트
                 [
                     {
@@ -222,11 +223,13 @@ class AnalysisService:
                     },
                     ...
                 ]
-        """
-        # 원본 콘텐츠 다시 추출 (컨텍스트용)
-        extractor = self._get_extractor(input_type)
-        original_content = extractor.extract(url)
 
+        Returns:
+            (result, articles) tuple
+            - result: 각 주장별 검색 결과 리스트
+            - articles: 모든 기사를 평탄화한 리스트
+        """
+        all_results = []
         all_articles = []
 
         # 각 주장별로 독립적인 검색 수행
@@ -235,37 +238,32 @@ class AnalysisService:
             search_keywords = claim_data.get('search_keywords_en', [])
             target_countries = claim_data.get('target_country_codes', [])
 
-            # [추가 기능] 키워드가 비어있다면 (예: 사용자 직접 입력), 즉석 생성
-            if not search_keywords and claim_kr:
-                print(f"🤖 사용자 입력('{claim_kr}')에 대한 키워드 생성 중...")
-                generated_info = self._generate_keywords_on_the_fly(claim_kr)
-                search_keywords = generated_info.get('keywords', [claim_kr])
-                # 만약 타겟 국가도 없다면 생성된 것 사용, 아니면 유지
-                if not target_countries:
-                    target_countries = generated_info.get('countries', [])
+            # 키워드가 없으면 스킵 (AI 생성하지 않음)
+            if not search_keywords:
+                print(f"⚠️ 키워드 없음 - 스킵: '{claim_kr[:30]}...'")
+                continue
 
-            # 1. 기사 검색 (영어 키워드 + 타겟 국가 정보 활용)
-            if search_keywords:
-                print(f"🔍 '{claim_kr[:15]}...' 검색 시작 (키워드: {search_keywords}, 국가: {target_countries})")
-                articles = self._search_real_articles(search_keywords, target_countries)
-                all_articles.extend(articles)
+            # GDELT 검색 실행 (영어 키워드 + 타겟 국가)
+            print(f"🔍 '{claim_kr[:15]}...' 검색 시작 (키워드: {search_keywords}, 국가: {target_countries})")
+            articles = self._search_real_articles(search_keywords, target_countries)
+
+            # 결과 구조화
+            result_entry = {
+                "claim": claim_kr,
+                "searched_keywords": search_keywords,
+                "articles": articles
+            }
+            all_results.append(result_entry)
+            all_articles.extend(articles)
 
         # 중복 제거 (URL 기준)
         unique_articles = {v['url']: v for v in all_articles}.values()
         final_articles = list(unique_articles)
 
-        # 2. AI 검증 (한국어로 결과 리포트)
-        print("🤖 Gemini로 2차 분석 (글로벌 관점 비교) 중...")
+        print(f"✅ 검색 완료: {len(final_articles)}개 기사 발견")
 
-        # claims_data에서 claim_kr만 추출하여 AI에게 전달
-        selected_claim_texts = [c['claim_kr'] for c in claims_data]
-
-        analysis_result = self._compare_perspectives_with_gemini(
-            original_content, selected_claim_texts, final_articles
-        )
-        print("✅ 2차 분석 완료")
-
-        return analysis_result, final_articles
+        # AI 분석 없이 검색 결과만 반환
+        return {"results": all_results}, final_articles
 
     def _generate_keywords_on_the_fly(self, claim_kr: str):
         """사용자 입력 주장을 위한 영어 키워드 및 타겟 국가 생성"""
