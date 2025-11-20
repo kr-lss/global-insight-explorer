@@ -9,10 +9,22 @@ document.addEventListener('DOMContentLoaded', () => {
   const factCheckResultsDiv = document.getElementById('factCheckResults');
   const errorDiv = document.getElementById('error');
 
-  // 백엔드 서버 주소 (환경에 따라 자동 설정)
-  const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  // 크롬 익스텐션 환경 감지
+  const isExtension = () => {
+    return window.location.protocol === 'chrome-extension:';
+  };
+
+  const isDevelopment = () => {
+    const hostname = window.location.hostname;
+    return hostname === 'localhost' || hostname === '127.0.0.1';
+  };
+
+  // 백엔드 서버 주소 설정
+  // 익스텐션 환경이거나 개발 환경이면 로컬 서버 사용
+  // 프로덕션 환경에서는 실제 배포된 서버 주소를 사용
+  const API_BASE_URL = (isDevelopment() || isExtension())
     ? 'http://127.0.0.1:8080'
-    : `${window.location.protocol}//${window.location.hostname}${window.location.port ? ':' + window.location.port : ''}`;
+    : 'https://your-actual-api-server.com'; // TODO: 실제 프로덕션 서버 주소로 변경 필요
   
   let currentAnalysis = null;
 

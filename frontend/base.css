@@ -1,0 +1,53 @@
+/* Base Styles and CSS Variables */
+/* 모든 프론트엔드 페이지에서 공유하는 기본 스타일과 CSS 변수 */
+
+/* CSS 변수 정의 */
+:root {
+  /* 색상 */
+  --primary-color: #1877f2;
+  --primary-hover: #166fe5;
+  --secondary-color: #42b883;
+  --danger-color: #fa383e;
+  --text-primary: #1c1e21;
+  --text-secondary: #65676b;
+  --bg-color: #f0f2f5;
+  --card-bg: #ffffff;
+  --border-color: #dddfe2;
+
+  /* 그림자 */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.1);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.1);
+
+  /* 모서리 둥글기 */
+  --border-radius: 8px;
+  --border-radius-sm: 6px;
+  --border-radius-lg: 12px;
+
+  /* 간격 */
+  --spacing-xs: 8px;
+  --spacing-sm: 12px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+}
+
+/* 전역 리셋 */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* 기본 폰트 및 색상 */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+/* 유틸리티 클래스 */
+.hidden {
+  display: none !important;
+}
