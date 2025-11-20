@@ -88,35 +88,99 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // 2차 분석: 다양한 관점 찾기
+  // AI 쿼리 최적화 함수
+  async function optimizeQuery(userInput, context) {
+    const response = await fetch(`${API_BASE_URL}/api/optimize-query`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_input: userInput,
+        context: {
+          video_title: context.video_title || '',
+          key_claims: context.key_claims || [],
+          related_countries: currentAnalysis?.related_countries || []
+        }
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error('쿼리 최적화 실패');
+    }
+
+    const data = await response.json();
+
+    if (!data.success) {
+      throw new Error(data.error || '쿼리 최적화 실패');
+    }
+
+    return {
+      search_keywords_en: data.search_keywords || [userInput],
+      target_country_codes: data.target_countries || [],
+      interpreted_intent: data.interpreted_intent || userInput
+    };
+  }
+
+  // 2차 분석: 다양한 관점 찾기 (AI 최적화 적용)
   factCheckBtn.addEventListener('click', async () => {
+    const customClaimInput = document.getElementById('customClaimInput');
+    const userInput = customClaimInput ? customClaimInput.value.trim() : '';
+
+    // 0. 기본 선택된 주장들 수집
     const selectedClaims = Array.from(
       document.querySelectorAll('#keyClaims input[type="checkbox"]:checked')
     ).map(input => input.value);
 
-    // 직접 입력한 주장 가져오기
-    const customClaimInput = document.getElementById('customClaimInput');
-    const customClaim = customClaimInput ? customClaimInput.value.trim() : '';
-
-    // 선택된 주장과 직접 입력한 주장 합치기
-    const allClaims = [...selectedClaims];
-    if (customClaim) {
-      allClaims.push(customClaim);
-    }
-
-    if (allClaims.length === 0) {
+    // 사용자 입력도 없고, 선택된 주장도 없으면 에러
+    if (!userInput && selectedClaims.length === 0) {
       showError('Select claims above or enter your own claim');
       return;
     }
 
-    showLoading(true, '다양한 관점의 출처를 찾고 있습니다...');
     clearError();
     factCheckBtn.disabled = true;
 
     try {
+      let allClaims = [...selectedClaims];
+
+      // ============================================================
+      // Step 1: 사용자 입력이 있다면 -> AI 최적화 (Optimize)
+      // ============================================================
+      if (userInput) {
+        showLoading(true, '💭 AI가 질문을 분석하고 있습니다...');
+
+        // 현재 분석 중인 영상의 맥락 정보
+        const context = {
+          video_title: currentAnalysis?.title || '',
+          key_claims: currentAnalysis?.key_claims || []
+        };
+
+        try {
+          const optimizedData = await optimizeQuery(userInput, context);
+
+          // 💡 UX 핵심: 사용자에게 중간 과정 보여주기
+          const keywordsPreview = optimizedData.search_keywords_en.slice(0, 3).join(', ');
+          showLoading(true, `🔍 핵심 키워드 [${keywordsPreview}] 등으로 전 세계 검색 중...`);
+
+          // 최적화된 결과를 검색 대상에 추가
+          allClaims.push(userInput);
+
+        } catch (optError) {
+          console.warn('AI 최적화 실패, 원본 입력 사용:', optError);
+          // 실패해도 멈추지 않고 원본 입력으로 검색 시도 (Fallback)
+          allClaims.push(userInput);
+          showLoading(true, '🔍 다양한 관점의 출처를 찾고 있습니다...');
+        }
+      } else {
+        // 사용자 입력 없을 땐 바로 검색 메시지
+        showLoading(true, '🔍 다양한 관점의 출처를 찾고 있습니다...');
+      }
+
+      // ============================================================
+      // Step 2: 검색 실행
+      // ============================================================
       const url = urlInput.value.trim();
       const inputType = document.querySelector('input[name="inputType"]:checked').value;
-      
+
       const response = await fetch(`${API_BASE_URL}/api/find-sources`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -135,7 +199,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       const data = await response.json();
-      
+
       if (!data.success) {
         throw new Error(data.error || '기사 검색 실패');
       }
