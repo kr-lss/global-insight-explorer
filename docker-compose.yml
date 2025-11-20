@@ -5,6 +5,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    command: sh -c "python scripts/upload_media_to_firestore.py && python -m app.main"
     ports:
       - "8080:8080"
     environment:

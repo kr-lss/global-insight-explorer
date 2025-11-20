@@ -5,7 +5,7 @@ const { Firestore } = require('@google-cloud/firestore');
 // GCP 환경에서는 자동으로 인증 정보를 찾습니다.
 const db = new Firestore({
   projectId: 'knu-sungsu613',
-  databaseId: 'global-insight-explorer-knu-sungsu613',
+  databaseId: '(default)',
 });
 
 // Firestore에 업로드할 데이터
