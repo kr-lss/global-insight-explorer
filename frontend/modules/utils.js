@@ -76,18 +76,6 @@ export function isYouTubeUrl(url) {
 }
 
 /**
- * API 베이스 URL 반환 (환경에 따라 자동 설정)
- * @returns {string} API 베이스 URL
- */
-export function getApiBaseUrl() {
-  const hostname = window.location.hostname;
-  if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return 'http://127.0.0.1:8080';
-  }
-  return `${window.location.protocol}//${hostname}${window.location.port ? ':' + window.location.port : ''}`;
-}
-
-/**
  * Firestore 타임스탬프를 로컬 날짜 문자열로 변환
  * @param {Object} timestamp - Firestore 타임스탬프 객체 {seconds, nanoseconds}
  * @returns {string} 로컬 날짜 문자열
