@@ -9,7 +9,7 @@ import hashlib
 from datetime import datetime
 
 import vertexai
-from vertexai.generative_models import GenerativeModel, Tool, GoogleSearchRetrieval
+from vertexai.generative_models import GenerativeModel, Tool, grounding
 from google.cloud import firestore
 from google.api_core.exceptions import GoogleAPICallError
 
@@ -354,7 +354,7 @@ class AnalysisService:
         try:
             # Google Search Grounding 시도
             search_tool = Tool.from_google_search_retrieval(
-                GoogleSearchRetrieval()
+                grounding.GoogleSearchRetrieval()
             )
 
             model = GenerativeModel(
