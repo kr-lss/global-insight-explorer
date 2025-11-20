@@ -17,6 +17,7 @@ from app.models.extractor import BaseExtractor, YoutubeExtractor, ArticleExtract
 from app.models.media import get_media_credibility
 from app.config import config
 from app.utils.gdelt_search import GDELTSearcher
+from app.prompts.analysis_prompts import QUERY_OPTIMIZATION_PROMPT
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # --- 초기화 ---
@@ -131,6 +132,74 @@ class AnalysisService:
         except Exception as e:
             print(f"❌ AI 1차 분석 실패: {e}")
             raise Exception(f"AI 분석 중 오류가 발생했습니다: {e}")
+
+    def optimize_search_query(self, user_input: str, context: dict):
+        """
+        [Step 1] 사용자 입력을 GDELT 검색 전략으로 변환 (Gemini 사용)
+
+        Args:
+            user_input: 사용자의 자연어 질문
+            context: 분석 컨텍스트 {'title_kr', 'key_claims'}
+
+        Returns:
+            {
+                "success": True/False,
+                "data": {
+                    "interpreted_intent": "...",
+                    "search_keywords_en": [...],
+                    "search_keywords_kr": [...],
+                    "target_country_codes": [...],
+                    "confidence": 0.95
+                },
+                "error": "..." (실패 시)
+            }
+        """
+        try:
+            if not gemini:
+                raise Exception("Gemini API를 사용할 수 없습니다.")
+
+            # 문맥 정보 추출 (없으면 기본값)
+            context_title = context.get('title_kr', '')
+            context_claims = context.get('key_claims', [])
+
+            # 프롬프트 생성
+            prompt = QUERY_OPTIMIZATION_PROMPT.format(
+                user_input=user_input,
+                context_title=context_title,
+                context_claims=str(context_claims)[:1000]  # 길이 제한
+            )
+
+            print(f"🤖 검색 쿼리 최적화 중: '{user_input[:50]}...'")
+
+            # Gemini 호출
+            response = gemini.generate_content(prompt)
+            result_text = response.text.strip().replace('```json', '').replace('```', '').strip()
+
+            # JSON 파싱
+            optimized_data = json.loads(result_text)
+
+            print(f"✅ 쿼리 최적화 완료 (confidence: {optimized_data.get('confidence', 0)})")
+
+            return {
+                "success": True,
+                "data": optimized_data
+            }
+
+        except Exception as e:
+            print(f"⚠️ 쿼리 최적화 실패: {e}")
+
+            # Fallback: 입력 텍스트를 그대로 키워드로 사용
+            return {
+                "success": False,
+                "error": str(e),
+                "data": {
+                    "interpreted_intent": "Fallback raw search",
+                    "search_keywords_en": [user_input],
+                    "search_keywords_kr": [user_input],
+                    "target_country_codes": [],
+                    "confidence": 0.1
+                }
+            }
 
     # ==================================================================
     # 2️⃣ 2차 분석 (Find Sources) - 사용자 제안 완벽 반영 + 커스텀 기능

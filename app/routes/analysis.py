@@ -75,3 +75,38 @@ def find_sources():
     except Exception as e:
         print(f"❌ /api/find-sources 에러: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+@analysis_bp.route('/optimize-query', methods=['POST'])
+def optimize_query():
+    """사용자 질문을 GDELT 검색 쿼리로 최적화"""
+    try:
+        data = request.get_json()
+
+        # 필수 파라미터 확인
+        if not data or 'user_input' not in data:
+            return jsonify({'error': '사용자 입력이 필요합니다'}), 400
+
+        user_input = data.get('user_input')
+        context = data.get('context', {})  # 선택적 컨텍스트
+
+        # 서비스 호출
+        result = analysis_service.optimize_search_query(user_input, context)
+
+        # 실패해도 Fallback 데이터를 반환하므로 항상 200 OK
+        return jsonify(result), 200
+
+    except Exception as e:
+        print(f"❌ /api/optimize-query 에러: {e}")
+        # 최악의 경우에도 Fallback 응답
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'data': {
+                'interpreted_intent': 'Error fallback',
+                'search_keywords_en': [data.get('user_input', '')],
+                'search_keywords_kr': [data.get('user_input', '')],
+                'target_country_codes': [],
+                'confidence': 0.0
+            }
+        }), 200
