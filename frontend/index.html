@@ -3,14 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Global Insight Explorer - 글로벌 미디어 관점 비교</title>
+  <title>Global Insight Explorer - 미디어 콘텐츠 분석 및 사실 검증</title>
+  <link rel="stylesheet" href="base.css">
   <link rel="stylesheet" href="main.css">
 </head>
 <body>
   <header class="header">
     <div class="header-content">
       <h1>🌍 Global Insight Explorer</h1>
-      <p class="subtitle">전 세계 언론의 관점을 비교하는 도구</p>
+      <p class="subtitle">미디어 콘텐츠 분석 및 사실 검증 도구</p>
     </div>
   </header>
 
@@ -103,7 +104,7 @@
           </div>
 
           <button id="factCheckBtn" class="btn btn-secondary">
-            <span class="btn-text">🔍 전 세계 언론의 관점 비교하기</span>
+            <span class="btn-text">다양한 출처 찾기</span>
           </button>
           <div id="factCheckResults" class="fact-check-results"></div>
         </div>
@@ -119,7 +120,8 @@
     </div>
   </footer>
 
-  <!-- ES Module 방식으로 로드 -->
-  <script type="module" src="main.js"></script>
+  <!-- 공유 유틸리티 함수 (향후 중복 코드 제거 시 사용) -->
+  <script src="shared.js"></script>
+  <script src="main.js"></script>
 </body>
 </html>
