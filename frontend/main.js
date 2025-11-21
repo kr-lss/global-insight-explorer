@@ -206,14 +206,8 @@ document.addEventListener('DOMContentLoaded', () => {
           const keywordsPreview = optimizedData.search_keywords_en.slice(0, 3).join(', ');
           showLoading(true, `🔍 핵심 키워드 [${keywordsPreview}] 등으로 전 세계 검색 중...`);
 
-          // [수정됨] 사용자의 원본 질문 대신, AI가 최적화한 "영어 검색어"를 검색 대상에 추가
-          // userInput(한국어) 대신 optimizedData.search_keywords_en(영어 키워드 배열)을 활용
-          if (optimizedData.search_keywords_en && optimizedData.search_keywords_en.length > 0) {
-            // 배열의 아이템들을 펼쳐서 추가 (spread syntax)
-            allClaims.push(...optimizedData.search_keywords_en);
-          } else {
-            allClaims.push(userInput);
-          }
+          // 최적화된 결과를 검색 대상에 추가
+          allClaims.push(userInput);
 
         } catch (optError) {
           console.warn('AI 최적화 실패, 원본 입력 사용:', optError);

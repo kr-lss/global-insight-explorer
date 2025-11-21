@@ -1,9 +1,10 @@
+# 기존 내용 지우고 아래 내용으로 업데이트 권장
 Flask==3.0.0
 Flask-Cors==4.0.0
-google-cloud-aiplatform==1.38.0
-google-cloud-bigquery==3.11.4
-google-cloud-firestore==2.13.1
-google-cloud-storage==2.19.0
+google-cloud-aiplatform>=1.60.0  # 중요: 최신 버전으로 변경
+google-cloud-bigquery>=3.11.4
+google-cloud-firestore>=2.13.1
+google-cloud-storage>=2.19.0
 youtube-transcript-api==0.6.1
 yt-dlp==2024.11.4
 requests==2.31.0
@@ -13,3 +14,6 @@ google-genai==0.3.0
 pydantic==2.10.5
 tenacity==9.0.0
 httpx==0.28.1
+pandas>=2.0.0
+db-dtypes>=1.2.0
+trafilatura>=1.6.0

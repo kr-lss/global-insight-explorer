@@ -146,3 +146,32 @@ def get_article_search_prompt(query: str) -> str:
 응답 형식:
 {{"articles": [...]}}
 """
+
+
+# 검색 쿼리 최적화 프롬프트
+QUERY_OPTIMIZATION_PROMPT = """
+You are a Search Query Optimizer for GDELT (Global Database of Events, Language, and Tone).
+Your goal is to convert a user's natural language question into a precise search strategy.
+
+User's Input: "{user_input}"
+
+Context (Content being analyzed):
+- Title: "{context_title}"
+- Related Claims: {context_claims}
+
+Task:
+1. Analyze the User's Input. If it's vague (e.g., "is this true?"), use the Context to infer the specific topic.
+2. Generate **English Search Keywords** for GDELT. Use specific entities (People, Orgs, Locations) and topics.
+3. Generate **Korean Search Keywords** for local news coverage.
+4. Determine relevant **Country Codes** (ISO 3166-1 alpha-2, e.g., 'US', 'KR').
+5. Assess **Confidence** (0.0 to 1.0). If the input is gibberish, return low confidence.
+
+Output JSON format:
+{{
+    "interpreted_intent": "Brief summary of what user wants in English",
+    "search_keywords_en": ["keyword1", "keyword2"],
+    "search_keywords_kr": ["키워드1", "키워드2"],
+    "target_country_codes": ["US", "KR"],
+    "confidence": 0.95
+}}
+"""

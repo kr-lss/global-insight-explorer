@@ -9,13 +9,16 @@ import hashlib
 from datetime import datetime
 
 import vertexai
-from vertexai.generative_models import GenerativeModel, Tool, GoogleSearchRetrieval
+from vertexai.generative_models import GenerativeModel, Tool, grounding
 from google.cloud import firestore
 from google.api_core.exceptions import GoogleAPICallError
 
 from app.models.extractor import BaseExtractor, YoutubeExtractor, ArticleExtractor
 from app.models.media import get_media_credibility
 from app.config import config
+from app.utils.gdelt_search import GDELTSearcher
+from app.prompts.analysis_prompts import QUERY_OPTIMIZATION_PROMPT
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # --- 초기화 ---
 gemini = None
@@ -41,6 +44,7 @@ class AnalysisService:
             'youtube': YoutubeExtractor(),
             'article': ArticleExtractor(),
         }
+        self.gdelt = GDELTSearcher()  # GDELT 검색 엔진 초기화
 
     def _get_extractor(self, input_type: str) -> BaseExtractor:
         extractor = self.extractors.get(input_type)
@@ -129,78 +133,313 @@ class AnalysisService:
             print(f"❌ AI 1차 분석 실패: {e}")
             raise Exception(f"AI 분석 중 오류가 발생했습니다: {e}")
 
+    def optimize_search_query(self, user_input: str, context: dict):
+        """
+        [Step 1] 사용자 입력을 GDELT 검색 전략으로 변환 (Gemini 사용)
+
+        Args:
+            user_input: 사용자의 자연어 질문
+            context: 분석 컨텍스트 {'title_kr', 'key_claims'}
+
+        Returns:
+            {
+                "success": True/False,
+                "data": {
+                    "interpreted_intent": "...",
+                    "search_keywords_en": [...],
+                    "search_keywords_kr": [...],
+                    "target_country_codes": [...],
+                    "confidence": 0.95
+                },
+                "error": "..." (실패 시)
+            }
+        """
+        try:
+            if not gemini:
+                raise Exception("Gemini API를 사용할 수 없습니다.")
+
+            # 문맥 정보 추출 (없으면 기본값)
+            context_title = context.get('title_kr', '')
+            context_claims = context.get('key_claims', [])
+
+            # 프롬프트 생성
+            prompt = QUERY_OPTIMIZATION_PROMPT.format(
+                user_input=user_input,
+                context_title=context_title,
+                context_claims=str(context_claims)[:1000]  # 길이 제한
+            )
+
+            print(f"🤖 검색 쿼리 최적화 중: '{user_input[:50]}...'")
+
+            # Gemini 호출
+            response = gemini.generate_content(prompt)
+            result_text = response.text.strip().replace('```json', '').replace('```', '').strip()
+
+            # JSON 파싱
+            optimized_data = json.loads(result_text)
+
+            print(f"✅ 쿼리 최적화 완료 (confidence: {optimized_data.get('confidence', 0)})")
+
+            return {
+                "success": True,
+                "data": optimized_data
+            }
+
+        except Exception as e:
+            print(f"⚠️ 쿼리 최적화 실패: {e}")
+
+            # Fallback: 입력 텍스트를 그대로 키워드로 사용
+            return {
+                "success": False,
+                "error": str(e),
+                "data": {
+                    "interpreted_intent": "Fallback raw search",
+                    "search_keywords_en": [user_input],
+                    "search_keywords_kr": [user_input],
+                    "target_country_codes": [],
+                    "confidence": 0.1
+                }
+            }
+
     # ==================================================================
-    # 2️⃣ 2차 분석 (Find Sources) - 수정된 로직 대응
+    # 2️⃣ 2차 분석 (Find Sources) - AI 추론 없이 검색만 수행
     # ==================================================================
     def find_sources_for_claims(
-        self, url: str, input_type: str, selected_claims: list, search_keywords: list
+        self, url: str, input_type: str, claims_data: list
     ):
         """
-        선택된 주장에 대한 교차 검증 (Google Search + GDELT 예정)
+        [Step 2] 확정된 검색 전략(claims_data)으로 실제 GDELT 검색 수행
+        * 이제 이 함수는 AI 추론을 하지 않고, 전달받은 키워드로 검색 수행에만 집중합니다.
+
+        Args:
+            url: 원본 콘텐츠 URL (현재는 사용하지 않음)
+            input_type: 콘텐츠 타입 (현재는 사용하지 않음)
+            claims_data: 주장 정보 리스트
+                [
+                    {
+                        "claim_kr": "한국어 주장",
+                        "search_keywords_en": ["keyword1", "keyword2"],
+                        "target_country_codes": ["US", "CN"]
+                    },
+                    ...
+                ]
+
+        Returns:
+            (result, articles) tuple
+            - result: 각 주장별 검색 결과 리스트
+            - articles: 모든 기사를 평탄화한 리스트
         """
-        # 원본 콘텐츠 다시 추출 (컨텍스트용)
-        extractor = self._get_extractor(input_type)
-        original_content = extractor.extract(url)
+        all_results = []
+        all_articles = []
 
-        # 1. 기사 검색 (영어 키워드로 검색)
-        # TODO: 향후 여기에 GDELT 검색 로직을 병합할 예정 (Hybrid Search)
-        articles = self._search_real_articles(search_keywords)
+        # 각 주장별로 독립적인 검색 수행
+        for claim_data in claims_data:
+            claim_kr = claim_data.get('claim_kr', '')
+            search_keywords = claim_data.get('search_keywords_en', [])
+            target_countries = claim_data.get('target_country_codes', [])
 
-        # 2. AI 검증 (한국어로 결과 리포트)
-        print("🤖 Gemini로 2차 분석 (팩트체크 & 관점 비교) 중...")
-        analysis_result = self._compare_perspectives_with_gemini(
-            original_content, selected_claims, articles
-        )
-        print("✅ 2차 분석 완료")
+            # 키워드가 없으면 스킵 (AI 생성하지 않음)
+            if not search_keywords:
+                print(f"⚠️ 키워드 없음 - 스킵: '{claim_kr[:30]}...'")
+                continue
 
-        return analysis_result, articles
+            # GDELT 검색 실행 (영어 키워드 + 타겟 국가)
+            print(f"🔍 '{claim_kr[:15]}...' 검색 시작 (키워드: {search_keywords}, 국가: {target_countries})")
+            articles = self._search_real_articles(search_keywords, target_countries)
 
-    def _search_real_articles(self, keywords: list):
+            # 결과 구조화
+            result_entry = {
+                "claim": claim_kr,
+                "searched_keywords": search_keywords,
+                "articles": articles
+            }
+            all_results.append(result_entry)
+            all_articles.extend(articles)
+
+        # 중복 제거 (URL 기준)
+        unique_articles = {v['url']: v for v in all_articles}.values()
+        final_articles = list(unique_articles)
+
+        print(f"✅ 검색 완료: {len(final_articles)}개 기사 발견")
+
+        # AI 분석 없이 검색 결과만 반환
+        return {"results": all_results}, final_articles
+
+    def _generate_keywords_on_the_fly(self, claim_kr: str):
+        """사용자 입력 주장을 위한 영어 키워드 및 타겟 국가 생성"""
+        if not gemini:
+            return {"keywords": [claim_kr], "countries": []}
+
+        try:
+            prompt = f"""
+            Translate this Korean claim into 2-3 English search keywords for news verification.
+            Also suggest 2 relevant country codes (ISO 3166-1 alpha-2).
+            Claim: "{claim_kr}"
+            Output JSON: {{"keywords": ["kw1", "kw2"], "countries": ["US", "KR"]}}
+            """
+            response = gemini.generate_content(prompt)
+            text = response.text.strip().replace('```json', '').replace('```', '').strip()
+            return json.loads(text)
+        except Exception as e:
+            print(f"⚠️ 키워드 생성 실패: {e}")
+            return {"keywords": [claim_kr], "countries": []}
+
+    def _search_real_articles(self, keywords: list, target_countries: list = None):
         """
-        Gemini Google Search Grounding (최신 SDK 문법 적용)
+        GDELT Hybrid 검색: GDELT (무료) → Google Search (유료 폴백)
+
+        Args:
+            keywords: 영어 검색 키워드 리스트
+            target_countries: 타겟 국가 코드 리스트 (예: ["US", "CN"])
         """
         if not keywords:
             return []
-            
-        # 키워드가 리스트의 리스트로 들어올 수 있음 (1차 분석 구조 변경 때문)
+
+        # 키워드 리스트 평탄화
         flat_keywords = []
         for k in keywords:
             if isinstance(k, list):
                 flat_keywords.extend(k)
             else:
                 flat_keywords.append(k)
-        
-        query = " ".join(flat_keywords[:7])  # 너무 길면 잘림, 최대 7단어 권장
-        print(f"🔍 Google Search Grounding 검색: {query}")
+
+        # 1️⃣ GDELT 검색 시도 (무료, 빠름, 글로벌)
+        print(f"📊 [1/2] GDELT 검색 중... (키워드: {flat_keywords[:3]}, 국가: {target_countries})")
+        gdelt_results = []
+        try:
+            gdelt_results = self.gdelt.search(
+                keywords=flat_keywords[:5],  # 최대 5개 키워드
+                target_countries=target_countries,
+                days=7,  # 최근 7일
+                limit=30  # 최대 30개
+            )
+        except Exception as e:
+            print(f"⚠️ GDELT 검색 실패: {e}")
+
+        # 2️⃣ 병렬 본문 추출 (ThreadPool 10개 워커)
+        if gdelt_results:
+            print(f"🔄 병렬 본문 추출 중... ({len(gdelt_results)}개 기사)")
+            extracted = self._extract_contents_parallel(gdelt_results)
+            print(f"✅ 추출 완료: {len(extracted)}개")
+
+            # 충분한 결과가 있으면 반환 (Google 비용 절약)
+            if len(extracted) >= 5:
+                return extracted
+
+            # 5개 미만이면 Google 폴백 필요
+            print(f"⚠️ GDELT 결과 부족 ({len(extracted)}개) → Google Search 폴백")
+
+        # 3️⃣ Google Search 폴백 (GDELT 실패 또는 결과 < 5개)
+        print(f"🔍 [2/2] Google Search 폴백...")
+        google_results = self._search_google_fallback(flat_keywords, target_countries)
+
+        # GDELT + Google 합치기
+        all_results = (extracted if gdelt_results else []) + google_results
+        return all_results
+
+    def _extract_contents_parallel(self, articles_meta: list):
+        """
+        병렬 처리로 기사 본문 추출 (ThreadPool)
+
+        Args:
+            articles_meta: GDELT 검색 결과 [{url, source, title, date, tone, country}, ...]
+
+        Returns:
+            본문이 추출된 기사 리스트
+        """
+        extracted = []
+        extractor = self.extractors['article']
+
+        def fetch_one(meta):
+            """단일 기사 추출 (병렬 실행 함수)"""
+            try:
+                url = meta.get('url', '')
+                if not url or url == '#':
+                    return None
+
+                # 본문 추출
+                content = extractor.extract(url)
+
+                # 너무 짧으면 무시
+                if not content or len(content) < 100:
+                    return None
+
+                # 메타데이터에 본문 추가
+                meta['content'] = content
+                meta['snippet'] = content[:500]  # 미리보기
+
+                # 신뢰도 추가 (국가/출처 기반)
+                if 'credibility' not in meta:
+                    meta['credibility'] = get_media_credibility(
+                        meta.get('source', ''),
+                        meta.get('country', '')
+                    )
+
+                print(f"✅ 추출 성공: {meta.get('source', 'Unknown')} ({meta.get('country', 'Unknown')})")
+                return meta
+
+            except Exception as e:
+                print(f"⚠️ 추출 실패: {meta.get('url', 'unknown')} - {e}")
+                return None
+
+        # ThreadPool 병렬 실행 (max_workers=10)
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(fetch_one, item) for item in articles_meta]
+
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    extracted.append(result)
+
+        return extracted
+
+    def _search_google_fallback(self, keywords: list, target_countries: list = None):
+        """
+        Google Search 폴백 (GDELT 실패 시)
+
+        Args:
+            keywords: 영어 검색 키워드 리스트
+            target_countries: 타겟 국가 코드 리스트
+
+        Returns:
+            검색 결과 리스트
+        """
+        if not keywords:
+            return []
+
+        # 기본 쿼리
+        base_query = " ".join(keywords[:7])  # 최대 7단어
+        query = base_query
+
+        # 타겟 국가가 있으면 쿼리에 추가
+        if target_countries and len(target_countries) > 0:
+            country_query = " OR ".join(target_countries)
+            query = f"{base_query} ({country_query})"
+
+        print(f"🔍 Google Search Query: {query}")
 
         try:
-            # ✅ [수정됨] 최신 Vertex AI SDK 방식
-            search_tool = Tool.from_google_search_retrieval(
-                GoogleSearchRetrieval()
+            # Google Search Grounding 시도
+            search_tool = Tool(
+                google_search=grounding.GoogleSearchRetrieval()
             )
-            
-            # 검색용 모델 별도 초기화 (Grounding 도구 포함)
+
             model = GenerativeModel(
                 'gemini-2.0-flash',
                 tools=[search_tool]
             )
-            
-            # Grounding을 강제하기 위한 프롬프트
+
             prompt = f"Search for latest news articles about: {query}. Provide details."
-            
             response = model.generate_content(prompt)
-            
-            # TODO: Grounding Metadata에서 실제 URL 추출 로직을 개선해야 함.
-            # 현재는 Grounding API의 특성상 텍스트 생성에 집중되어 있으므로,
-            # 정확한 URL 리스트가 필요하면 Custom Search JSON API를 병행하는 것이 좋음.
-            # 일단은 구조 유지를 위해 샘플 데이터(Fallback) 또는 Gemini가 생성한 텍스트 내 정보를 활용
-            
-            print("⚠️ Google Search Grounding 완료 (URL 추출 로직 보완 필요)")
-            return self._get_sample_articles(flat_keywords) 
+
+            # TODO: Grounding Metadata에서 실제 URL 추출
+            # 현재는 구조적 URL 추출이 어려우므로 샘플 반환
+            print("⚠️ Google Search 완료 (URL 추출 로직 보완 필요)")
+            return self._get_sample_articles(keywords, target_countries)
 
         except Exception as e:
-            print(f"⚠️ 검색 실패 ({e}). 샘플 데이터 사용.")
-            return self._get_sample_articles(flat_keywords)
+            print(f"⚠️ Google Search 실패: {e}")
+            return self._get_sample_articles(keywords, target_countries)
 
     def _compare_perspectives_with_gemini(
         self, original_content: str, claims: list, articles: list
@@ -217,31 +456,44 @@ class AnalysisService:
         ])
 
         prompt = f"""
-        당신은 객관적인 팩트체커입니다. 다음 정보를 바탕으로 보고서를 작성하세요.
+        당신은 중립적인 '국제 뉴스 분석가'입니다.
+        사용자가 선택한 주장에 대해, 세계 각국의 언론이 어떻게 보도하고 있는지 객관적으로 비교 분석해주세요.
         **반드시 한국어로 답변하세요.**
 
-        [검증 대상 주장 (사용자 선택)]
+        **절대로 특정 주장이 사실인지 거짓인지 단정 짓지 마세요.**
+        오직 'A 언론사는 이렇게 보도했고, B 언론사는 저렇게 보도했다'는 차이점과 맥락을 보여주는 데 집중하세요.
+
+        [분석 대상 주장]
         {chr(10).join([f'- {c}' for c in claims])}
 
-        [수집된 관련 기사/자료]
+        [수집된 기사 데이터]
         {articles_text}
 
         [지시사항]
         1. 각 주장에 대해 수집된 기사들이 **지지(Supporting)**하는지, **반박(Opposing)**하는지, 또는 **중립/관련없음**인지 분석하세요.
-        2. 국가별 언론의 시각 차이가 있다면 지적해주세요 (예: 미국 언론은 A라 하지만, 중국 언론은 B라 함).
-        3. 최종적으로 이 주장의 신뢰도를 '높음/중간/낮음/판단불가'로 평가하세요.
+        2. 국가별 언론의 시각 차이가 있다면 지적해주세요 (예: 미국 언론은 경제적 측면을, 중국 언론은 정치적 측면을 강조).
+        3. **판단은 사용자에게 맡기고**, 다양한 관점이 있다는 것만 보여주세요.
 
         [응답 형식 (JSON)]
         {{
           "results": [
             {{
               "claim": "주장 내용",
-              "verdict": "대체로 사실 / 논란 있음 / 거짓",
-              "analysis_kr": "분석 내용 (한국어 상세 설명)",
               "perspectives": [
-                 {{"country": "US", "stance": "Supporting", "media": "CNN"}},
-                 {{"country": "CN", "stance": "Opposing", "media": "Global Times"}}
-              ]
+                 {{
+                   "country": "US",
+                   "media": "CNN",
+                   "stance": "Supporting",
+                   "viewpoint": "이 기사는 ~~한 근거를 들어 해당 주장을 지지하는 논조입니다."
+                 }},
+                 {{
+                   "country": "CN",
+                   "media": "Global Times",
+                   "stance": "Opposing",
+                   "viewpoint": "반면 이 기사는 ~~라며 다른 관점을 제시합니다."
+                 }}
+              ],
+              "summary_kr": "종합해보면 미국 언론은 경제적 측면을, 중국 언론은 정치적 측면을 강조하고 있습니다. (판단은 사용자 몫)"
             }}
           ]
         }}
@@ -277,10 +529,39 @@ class AnalysisService:
             })
         except: pass
 
-    def _get_sample_articles(self, keywords: list):
+    def _get_sample_articles(self, keywords: list, target_countries: list = None):
         """검색 실패 시 테스트용 샘플 데이터"""
         k = keywords[0] if keywords else "이슈"
-        return [
-            {'title': f'Global view on {k}', 'snippet': 'Western media perspective...', 'url': '#', 'source': 'CNN', 'country': 'US', 'credibility': 80},
-            {'title': f'Alternative view on {k}', 'snippet': 'Eastern media perspective...', 'url': '#', 'source': 'Xinhua', 'country': 'CN', 'credibility': 60},
-        ]
+
+        # 타겟 국가에 맞는 샘플 데이터 생성
+        sample_sources = []
+        if target_countries and len(target_countries) > 0:
+            # 타겟 국가별 대표 언론사 매핑
+            country_media = {
+                'US': {'source': 'CNN', 'credibility': 80},
+                'UK': {'source': 'BBC', 'credibility': 85},
+                'CN': {'source': 'Xinhua', 'credibility': 60},
+                'RU': {'source': 'RT', 'credibility': 55},
+                'JP': {'source': 'NHK', 'credibility': 75},
+                'KR': {'source': 'Yonhap', 'credibility': 75},
+                'FR': {'source': 'France 24', 'credibility': 80},
+                'DE': {'source': 'DW', 'credibility': 80},
+            }
+            for country in target_countries[:3]:  # 최대 3개국
+                media = country_media.get(country, {'source': f'{country} News', 'credibility': 70})
+                sample_sources.append({
+                    'title': f'{media["source"]}: {k} coverage',
+                    'snippet': f'{country} perspective on {k}...',
+                    'url': '#',
+                    'source': media['source'],
+                    'country': country,
+                    'credibility': media['credibility']
+                })
+        else:
+            # 기본 샘플 (타겟 국가 없을 때)
+            sample_sources = [
+                {'title': f'Global view on {k}', 'snippet': 'Western media perspective...', 'url': '#', 'source': 'CNN', 'country': 'US', 'credibility': 80},
+                {'title': f'Alternative view on {k}', 'snippet': 'Eastern media perspective...', 'url': '#', 'source': 'Xinhua', 'country': 'CN', 'credibility': 60},
+            ]
+
+        return sample_sources

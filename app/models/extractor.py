@@ -200,21 +200,43 @@ class YoutubeExtractor(BaseExtractor):
 
 
 class ArticleExtractor(BaseExtractor):
-    """기사 본문 추출 전략"""
+    """기사 본문 추출 전략 (향상된 봇 방어 우회)"""
 
     def extract(self, url: str) -> str:
         try:
+            # 봇 탐지 우회를 위한 현대적인 브라우저 헤더
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Referer': 'https://www.google.com/',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1'
             }
-            response = requests.get(url, headers=headers, timeout=15)
-            response.raise_for_status()
 
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            response.encoding = response.apparent_encoding  # 인코딩 자동 감지
+
+            # 1단계: trafilatura 사용 (고품질 텍스트 추출)
+            try:
+                import trafilatura
+                text = trafilatura.extract(response.text)
+                if text and len(text) > 100:
+                    return text
+            except ImportError:
+                pass  # trafilatura 없으면 BeautifulSoup 사용
+            except Exception as e:
+                print(f"⚠️ trafilatura 실패, BeautifulSoup 사용: {e}")
+
+            # 2단계: BeautifulSoup 폴백
             soup = BeautifulSoup(response.content, 'html.parser')
 
             # 불필요한 태그 제거
             for tag in soup(
-                ['script', 'style', 'nav', 'header', 'footer', 'aside', 'form']
+                ['script', 'style', 'nav', 'header', 'footer', 'aside', 'form', 'iframe']
             ):
                 tag.decompose()
 
@@ -224,20 +246,26 @@ class ArticleExtractor(BaseExtractor):
                 or soup.find('main')
                 or soup.find(id='content')
                 or soup.find(class_='content')
+                or soup.find(class_='article-body')
                 or soup.body
             )
 
             if article:
-                text = article.get_text(separator=' ', strip=True)
-                # 지나치게 긴 공백 제거
-                text = ' '.join(text.split())
-                return text
-            else:
-                return ""
+                text = article.get_text(separator='\n', strip=True)
+                # 공백 정리
+                lines = (line.strip() for line in text.splitlines())
+                chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+                text = '\n'.join(chunk for chunk in chunks if chunk)
+
+                # 최소 길이 체크
+                if len(text) > 100:
+                    return text
+
+            return ""
 
         except requests.RequestException as e:
             print(f"⚠️ 기사 요청 실패: {e}")
-            raise Exception(f"기사 내용을 가져오는 데 실패했습니다. URL을 확인해주세요.")
+            return ""  # 예외 발생 대신 빈 문자열 반환 (병렬 처리 시 안정적)
         except Exception as e:
             print(f"⚠️ 기사 처리 실패: {e}")
-            raise Exception(f"기사 내용을 처리하는 중 오류가 발생했습니다.")
+            return ""
