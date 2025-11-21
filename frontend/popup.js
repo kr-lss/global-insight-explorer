@@ -188,7 +188,8 @@ document.addEventListener('DOMContentLoaded', () => {
           url,
           inputType,
           selected_claims: allClaims,
-          search_keywords: currentAnalysis?.search_keywords?.flat() || allClaims,
+          // 수정된 통합 키워드 목록 전송
+          search_keywords: finalSearchKeywords,
           related_countries: currentAnalysis?.related_countries || []
         }),
       });
