@@ -161,8 +161,14 @@ document.addEventListener('DOMContentLoaded', () => {
           const keywordsPreview = optimizedData.search_keywords_en.slice(0, 3).join(', ');
           showLoading(true, `🔍 핵심 키워드 [${keywordsPreview}] 등으로 전 세계 검색 중...`);
 
-          // 최적화된 결과를 검색 대상에 추가
-          allClaims.push(userInput);
+          // [수정됨] 사용자의 원본 질문 대신, AI가 최적화한 "영어 검색어"를 검색 대상에 추가
+          // userInput(한국어) 대신 optimizedData.search_keywords_en(영어 키워드 배열)을 활용
+          if (optimizedData.search_keywords_en && optimizedData.search_keywords_en.length > 0) {
+            // 배열의 아이템들을 펼쳐서 추가 (spread syntax)
+            allClaims.push(...optimizedData.search_keywords_en);
+          } else {
+            allClaims.push(userInput);
+          }
 
         } catch (optError) {
           console.warn('AI 최적화 실패, 원본 입력 사용:', optError);
@@ -181,6 +187,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const url = urlInput.value.trim();
       const inputType = document.querySelector('input[name="inputType"]:checked').value;
 
+      // [중요] 기존 분석 키워드 + 이번에 추가된 키워드(allClaims)를 합쳐서 전송
+      let finalSearchKeywords = currentAnalysis?.search_keywords?.flat() || [];
+      finalSearchKeywords = finalSearchKeywords.concat(allClaims); // 배열 합치기
+
       const response = await fetch(`${API_BASE_URL}/api/find-sources`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -188,7 +198,8 @@ document.addEventListener('DOMContentLoaded', () => {
           url,
           inputType,
           selected_claims: allClaims,
-          search_keywords: currentAnalysis?.search_keywords?.flat() || allClaims,
+          // 수정된 통합 키워드 목록 전송
+          search_keywords: finalSearchKeywords,
           related_countries: currentAnalysis?.related_countries || []
         }),
       });
