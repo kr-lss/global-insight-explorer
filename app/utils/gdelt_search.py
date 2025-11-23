@@ -55,8 +55,9 @@ class GDELTSearcher:
                 target_date = datetime.now()
 
         # 검색 범위: 사건 발생일 기준 ±4일 (총 9일)
-        start_date = (target_date - timedelta(days=4)).strftime('%Y%m%d000000')
-        end_date = (target_date + timedelta(days=4)).strftime('%Y%m%d235959')
+        # GDELT DATE 컬럼은 INT64 타입이므로 정수로 변환
+        start_date = int((target_date - timedelta(days=4)).strftime('%Y%m%d000000'))
+        end_date = int((target_date + timedelta(days=4)).strftime('%Y%m%d235959'))
 
         # 3. [WHERE/WHO/WHAT] 내용 조건 구성 (OR 논리 - 유연한 검색)
         or_conditions = []
@@ -98,7 +99,7 @@ class GDELTSearcher:
         # repr()을 사용하여 안전하게 문자열 포맷팅
         domain_filter = f"SourceCommonName IN ({','.join([repr(d) for d in trusted_domains])})"
 
-        # 5. 최종 SQL 작성
+        # 5. 최종 SQL 작성 (DATE는 INT64 타입이므로 정수끼리 직접 비교)
         query = f"""
         SELECT
             DocumentIdentifier as url,
@@ -108,8 +109,8 @@ class GDELTSearcher:
             Locations,
             Themes
         FROM `gdelt-bq.gdeltv2.gkg_partitioned`
-        WHERE DATE >= PARSE_TIMESTAMP('%Y%m%d%H%M%S', '{start_date}')
-          AND DATE <= PARSE_TIMESTAMP('%Y%m%d%H%M%S', '{end_date}')
+        WHERE DATE >= {start_date}
+          AND DATE <= {end_date}
           AND {domain_filter}          -- 신뢰할 수 있는 언론사
           AND {final_content_query}    -- 내용 관련성
           AND DocumentIdentifier IS NOT NULL

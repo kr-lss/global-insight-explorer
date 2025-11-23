@@ -594,15 +594,10 @@ class AnalysisService:
         print(f"🔍 Google Search Query: {query}")
 
         try:
-            # Google Search Grounding 시도
-            search_tool = Tool.from_google_search_retrieval(
-                grounding.GoogleSearchRetrieval()
-            )
+            # Google Search Grounding 시도 (Tool 객체 없이 직접 grounding 사용)
+            model = GenerativeModel('gemini-2.0-flash')
 
-            model = GenerativeModel(
-                'gemini-2.0-flash',
-                tools=[search_tool]
-            )
+            # tools 파라미터는 generate_content에 직접 전달
 
             prompt = f"""Find recent news articles about: {query}
 
@@ -614,7 +609,11 @@ class AnalysisService:
 
             Only return valid JSON, no other text."""
 
-            response = model.generate_content(prompt)
+            # Google Search Grounding을 tools로 전달
+            response = model.generate_content(
+                prompt,
+                tools=[grounding.GoogleSearchRetrieval()]
+            )
 
             # Grounding Metadata에서 URL 추출 시도
             articles = []
