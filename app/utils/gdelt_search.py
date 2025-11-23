@@ -108,7 +108,8 @@ class GDELTSearcher:
             Locations,
             Themes
         FROM `gdelt-bq.gdeltv2.gkg_partitioned`
-        WHERE DATE >= {start_date} AND DATE <= {end_date}
+        WHERE DATE >= PARSE_TIMESTAMP('%Y%m%d%H%M%S', '{start_date}')
+          AND DATE <= PARSE_TIMESTAMP('%Y%m%d%H%M%S', '{end_date}')
           AND {domain_filter}          -- 신뢰할 수 있는 언론사
           AND {final_content_query}    -- 내용 관련성
           AND DocumentIdentifier IS NOT NULL
