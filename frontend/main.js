@@ -153,7 +153,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // AI 쿼리 최적화 함수
+  // AI 쿼리 최적화 함수 (5대 요소 추출)
   async function optimizeQuery(userInput, context) {
     const response = await fetch(`${API_BASE_URL}/api/optimize-query`, {
       method: 'POST',
@@ -177,10 +177,11 @@ document.addEventListener('DOMContentLoaded', () => {
       throw new Error(data.error || '쿼리 최적화 실패');
     }
 
-    // 백엔드 응답 구조: {success: true, data: {search_keywords_en: [...], ...}}
+    // 백엔드 응답 구조: {success: true, data: {gdelt_params: {...}, search_keywords_en: [...], ...}}
     const result = data.data || {};
 
     return {
+      gdelt_params: result.gdelt_params || null,  // 5대 요소 (NEW)
       search_keywords_en: result.search_keywords_en || [userInput],
       target_country_codes: result.target_country_codes || [],
       interpreted_intent: result.interpreted_intent || userInput
@@ -261,6 +262,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const claimsData = [...selectedClaimsData];
         claimsData.push({
           claim_kr: userInput,
+          gdelt_params: optimizedData.gdelt_params || null,  // 5대 요소 (NEW)
           search_keywords_en: optimizedData.search_keywords_en || [userInput],
           target_country_codes: optimizedData.target_country_codes || []
         });
@@ -322,6 +324,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const claimsData = [...selectedClaimsData];
       claimsData.push({
         claim_kr: userInput,
+        gdelt_params: null,  // Fallback: 5대 요소 없음
         search_keywords_en: [userInput],
         target_country_codes: []
       });
@@ -346,6 +349,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const claimsData = [...selectedClaimsData];
     claimsData.push({
       claim_kr: userInput,
+      gdelt_params: optimizedData.gdelt_params || null,  // 5대 요소 (NEW)
       search_keywords_en: optimizedData.search_keywords_en || [userInput],
       target_country_codes: optimizedData.target_country_codes || []
     });

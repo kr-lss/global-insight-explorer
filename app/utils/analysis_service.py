@@ -164,7 +164,7 @@ class AnalysisService:
 
     def optimize_search_query(self, user_input: str, context: dict):
         """
-        [Step 1] 사용자 입력을 GDELT 검색 전략으로 변환 (Gemini 사용)
+        [Step 1] 사용자 입력을 GDELT 5대 요소 검색 전략으로 변환 (Gemini 사용)
 
         Args:
             user_input: 사용자의 자연어 질문
@@ -175,8 +175,14 @@ class AnalysisService:
                 "success": True/False,
                 "data": {
                     "interpreted_intent": "...",
-                    "search_keywords_en": [...],
-                    "search_keywords_kr": [...],
+                    "gdelt_params": {
+                        "keywords": [...],
+                        "entities": [...],
+                        "locations": [...],
+                        "themes": [...],
+                        "event_date": "YYYY-MM-DD"
+                    },
+                    "search_keywords_en": [...],  # 하위 호환성
                     "target_country_codes": [...],
                     "confidence": 0.95
                 },
@@ -191,14 +197,62 @@ class AnalysisService:
             context_title = context.get('title_kr', '')
             context_claims = context.get('key_claims', [])
 
-            # 프롬프트 생성
-            prompt = QUERY_OPTIMIZATION_PROMPT.format(
-                user_input=user_input,
-                context_title=context_title,
-                context_claims=str(context_claims)[:1000]  # 길이 제한
-            )
+            # 5대 요소 추출 프롬프트
+            prompt = f"""
+            당신은 데이터 저널리즘 및 GDELT 검색 전문가입니다.
+            사용자의 질문을 분석하여 글로벌 뉴스 검색에 필요한 5대 요소를 추출하세요.
 
-            print(f"🤖 검색 쿼리 최적화 중: '{user_input[:50]}...'")
+            [질문] "{user_input}"
+
+            [문맥 정보]
+            제목: {context_title}
+            관련 주장: {str(context_claims)[:500]}
+
+            [필수 지시사항]
+            1. **모든 검색 요소는 반드시 영어(English)**로 작성하세요.
+            2. **event_date**: 사건이 발생한 날짜 (YYYY-MM-DD 형식). 정확한 날짜를 모르면 최근 날짜 추정.
+            3. **entities**: 핵심 인물/조직 영문명 (예: ["Kim Jong Un", "NATO"])
+            4. **locations**: 관련 도시/국가 영문명 (예: ["Seoul", "Ukraine", "Middle East"])
+            5. **themes**: GDELT 테마 코드 (예: ["ARMEDCONFLICT", "SCANDAL", "ECON_INFLATION"])
+               - 주요 테마: ARMEDCONFLICT, SCANDAL, HEALTH_PANDEMIC, ECON_INFLATION, TERROR, ENV_CLIMATECHANGE
+            6. **keywords**: 일반 검색 키워드 (위에 포함되지 않은 추가 단어)
+
+            [출력 형식 (JSON Only)]
+            {{
+                "interpreted_intent": "질문 의도를 한국어로 요약",
+                "gdelt_params": {{
+                    "event_date": "2024-01-15",
+                    "keywords": ["missile", "test"],
+                    "entities": ["Kim Jong Un", "US Defense Department"],
+                    "locations": ["North Korea", "Pacific Ocean"],
+                    "themes": ["ARMEDCONFLICT", "WB_1678_SECURITY_THREAT"]
+                }},
+                "search_keywords_en": ["North Korea", "missile", "test"],
+                "target_country_codes": ["KP", "US", "KR"],
+                "confidence": 0.9
+            }}
+
+            [예시]
+            질문: "북한의 최근 미사일 발사에 대한 미국의 반응은?"
+            출력:
+            {{
+                "interpreted_intent": "북한 미사일 발사에 대한 미국의 공식 입장 및 대응 조치",
+                "gdelt_params": {{
+                    "event_date": "2024-11-20",
+                    "keywords": ["missile", "launch", "response"],
+                    "entities": ["North Korea", "United States", "Pentagon"],
+                    "locations": ["North Korea", "Washington"],
+                    "themes": ["ARMEDCONFLICT", "WB_1678_SECURITY_THREAT"]
+                }},
+                "search_keywords_en": ["North Korea", "missile", "US response"],
+                "target_country_codes": ["KP", "US", "KR"],
+                "confidence": 0.95
+            }}
+
+            JSON만 출력하세요. 다른 말은 하지 마세요.
+            """
+
+            print(f"🤖 5대 요소 검색 쿼리 최적화 중: '{user_input[:50]}...'")
 
             # Gemini 호출
             response = gemini.generate_content(prompt)
@@ -207,7 +261,13 @@ class AnalysisService:
             # JSON 파싱
             optimized_data = json.loads(result_text)
 
-            print(f"✅ 쿼리 최적화 완료 (confidence: {optimized_data.get('confidence', 0)})")
+            # 하위 호환성: search_keywords_en이 없으면 keywords에서 생성
+            if 'search_keywords_en' not in optimized_data and 'gdelt_params' in optimized_data:
+                gdelt_params = optimized_data['gdelt_params']
+                all_keywords = gdelt_params.get('keywords', []) + gdelt_params.get('entities', [])
+                optimized_data['search_keywords_en'] = all_keywords[:5]
+
+            print(f"✅ 5대 요소 추출 완료 (confidence: {optimized_data.get('confidence', 0)})")
 
             return {
                 "success": True,
@@ -223,8 +283,14 @@ class AnalysisService:
                 "error": str(e),
                 "data": {
                     "interpreted_intent": "Fallback raw search",
+                    "gdelt_params": {
+                        "keywords": [user_input],
+                        "entities": [],
+                        "locations": [],
+                        "themes": [],
+                        "event_date": datetime.now().strftime('%Y-%m-%d')
+                    },
                     "search_keywords_en": [user_input],
-                    "search_keywords_kr": [user_input],
                     "target_country_codes": [],
                     "confidence": 0.1
                 }
@@ -237,8 +303,8 @@ class AnalysisService:
         self, url: str, input_type: str, claims_data: list
     ):
         """
-        [Step 2] 확정된 검색 전략(claims_data)으로 실제 GDELT 검색 수행
-        * 이제 이 함수는 AI 추론을 하지 않고, 전달받은 키워드로 검색 수행에만 집중합니다.
+        [Step 2] 확정된 검색 전략(claims_data)으로 실제 GDELT 5대 요소 검색 수행
+        * 이제 이 함수는 AI 추론을 하지 않고, 전달받은 파라미터로 검색 수행에만 집중합니다.
 
         Args:
             url: 원본 콘텐츠 URL (현재는 사용하지 않음)
@@ -247,8 +313,15 @@ class AnalysisService:
                 [
                     {
                         "claim_kr": "한국어 주장",
-                        "search_keywords_en": ["keyword1", "keyword2"],
-                        "target_country_codes": ["US", "CN"]
+                        "gdelt_params": {  # 5대 요소 (신규)
+                            "keywords": [...],
+                            "entities": [...],
+                            "locations": [...],
+                            "themes": [...],
+                            "event_date": "YYYY-MM-DD"
+                        },
+                        "search_keywords_en": [...],  # 하위 호환성
+                        "target_country_codes": [...]
                     },
                     ...
                 ]
@@ -264,22 +337,39 @@ class AnalysisService:
         # 각 주장별로 독립적인 검색 수행
         for claim_data in claims_data:
             claim_kr = claim_data.get('claim_kr', '')
-            search_keywords = claim_data.get('search_keywords_en', [])
-            target_countries = claim_data.get('target_country_codes', [])
 
-            # 키워드가 없으면 스킵 (AI 생성하지 않음)
-            if not search_keywords:
-                print(f"⚠️ 키워드 없음 - 스킵: '{claim_kr[:30]}...'")
-                continue
+            # ✅ NEW: gdelt_params 우선 사용 (5대 요소 검색)
+            gdelt_params = claim_data.get('gdelt_params')
 
-            # GDELT 검색 실행 (영어 키워드 + 타겟 국가)
-            print(f"🔍 '{claim_kr[:15]}...' 검색 시작 (키워드: {search_keywords}, 국가: {target_countries})")
-            articles = self._search_real_articles(search_keywords, target_countries)
+            if not gdelt_params:
+                # Fallback: 기존 search_keywords_en 방식으로 변환
+                search_keywords = claim_data.get('search_keywords_en', [])
+                target_countries = claim_data.get('target_country_codes', [])
+
+                if not search_keywords:
+                    print(f"⚠️ 검색 파라미터 없음 - 스킵: '{claim_kr[:30]}...'")
+                    continue
+
+                gdelt_params = {
+                    'keywords': search_keywords,
+                    'entities': [],
+                    'locations': [],
+                    'themes': [],
+                    'event_date': datetime.now().strftime('%Y-%m-%d')
+                }
+                print(f"🔍 '{claim_kr[:15]}...' 검색 (Legacy 모드: keywords={search_keywords})")
+            else:
+                print(f"🔍 '{claim_kr[:15]}...' 검색 (5대 요소 모드)")
+                print(f"   entities={gdelt_params.get('entities', [])} locations={gdelt_params.get('locations', [])}")
+                print(f"   themes={gdelt_params.get('themes', [])} keywords={gdelt_params.get('keywords', [])}")
+
+            # GDELT 5대 요소 검색 실행
+            articles = self._search_real_articles_with_params(gdelt_params)
 
             # 결과 구조화
             result_entry = {
                 "claim": claim_kr,
-                "searched_keywords": search_keywords,
+                "searched_keywords": gdelt_params.get('keywords', []),
                 "articles": articles
             }
             all_results.append(result_entry)
@@ -312,6 +402,58 @@ class AnalysisService:
         except Exception as e:
             print(f"⚠️ 키워드 생성 실패: {e}")
             return {"keywords": [claim_kr], "countries": []}
+
+    def _search_real_articles_with_params(self, gdelt_params: dict):
+        """
+        GDELT 5대 요소 검색 with Google Search Fallback
+
+        Args:
+            gdelt_params: {
+                'keywords': [...],
+                'entities': [...],
+                'locations': [...],
+                'themes': [...],
+                'event_date': 'YYYY-MM-DD'
+            }
+
+        Returns:
+            검색 결과 리스트
+        """
+        if not gdelt_params:
+            return []
+
+        # 1️⃣ GDELT 5대 요소 검색 시도 (무료, 빠름, 글로벌)
+        print(f"📊 [1/2] GDELT 5대 요소 검색 중...")
+        gdelt_results = []
+        try:
+            gdelt_results = self.gdelt.search(gdelt_params)
+        except Exception as e:
+            print(f"⚠️ GDELT 검색 실패: {e}")
+
+        # 2️⃣ 병렬 본문 추출 (ThreadPool 10개 워커)
+        if gdelt_results:
+            print(f"🔄 병렬 본문 추출 중... ({len(gdelt_results)}개 기사)")
+            extracted = self._extract_contents_parallel(gdelt_results)
+            print(f"✅ 추출 완료: {len(extracted)}개")
+            return extracted
+
+        # 3️⃣ GDELT 실패 시 Google Search Grounding 폴백
+        print(f"⚠️ GDELT 검색 결과 없음, Google Search 시도...")
+
+        # gdelt_params에서 키워드 추출 (모든 요소 결합)
+        all_keywords = []
+        all_keywords.extend(gdelt_params.get('keywords', []))
+        all_keywords.extend(gdelt_params.get('entities', []))
+        all_keywords.extend(gdelt_params.get('locations', []))
+
+        google_results = self._search_google_fallback(all_keywords[:5], [])
+
+        if google_results:
+            print(f"✅ Google Search 완료: {len(google_results)}개 발견")
+            return google_results
+
+        print(f"⚠️ Google Search도 결과 없음")
+        return []
 
     def _search_real_articles(self, keywords: list, target_countries: list = None):
         """

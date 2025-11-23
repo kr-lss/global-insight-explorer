@@ -1,16 +1,17 @@
 """
-GDELT BigQuery Search Service
+GDELT BigQuery Search Service - AI 기반 5대 요소 동적 검색 엔진
 전 세계 뉴스 기사 URL을 BigQuery로 검색하는 핵심 엔진
 """
+from datetime import datetime, timedelta
 from google.cloud import bigquery
 from app.config import config
 
 
 class GDELTSearcher:
-    """GDELT BigQuery 검색 클래스"""
-
+    """
+    AI 기반 5대 요소(Who, Where, When, What, Source)를 활용한 동적 GDELT 검색 엔진
+    """
     def __init__(self):
-        """BigQuery 클라이언트 초기화"""
         self.client = None
         try:
             self.client = bigquery.Client(project=config.GCP_PROJECT)
@@ -18,189 +19,131 @@ class GDELTSearcher:
         except Exception as e:
             print(f"⚠️ (GDELT) BigQuery 연결 실패: {e}")
 
-    def search(
-        self, keywords: list, target_countries: list = None, days: int = 7, limit: int = 30
-    ):
+    def search(self, search_params: dict):
         """
-        GDELT에서 키워드와 국가 코드로 뉴스 URL 검색
+        AI가 추출한 5대 요소로 최적화된 SQL을 생성하여 검색
 
         Args:
-            keywords: 영어 검색 키워드 리스트 (예: ['Trump', 'tariff', 'China'])
-            target_countries: ISO 국가 코드 리스트 (예: ['US', 'CN', 'KR'])
-            days: 과거 며칠치 데이터 검색 (기본 7일)
-            limit: 최대 결과 개수 (기본 30개)
+            search_params: {
+                'keywords': [...],      # 핵심 키워드
+                'themes': [...],        # GDELT 테마 코드
+                'entities': [...],      # 인물/조직명
+                'locations': [...],     # 장소
+                'event_date': 'YYYY-MM-DD'  # 사건 발생일
+            }
 
         Returns:
             [{url, source, title, date, tone, country}, ...]
         """
-        if not self.client or not keywords:
+        if not self.client:
             return []
 
-        # 키워드 최적화: 띄어쓰기 제거, 핵심 단어만 사용
-        # GDELT Themes는 연속된 단어가 아닌 개별 키워드로 저장됨
-        optimized_keywords = []
-        for k in keywords[:3]:  # 최대 3개만 사용 (너무 많으면 매칭 실패)
-            # "North Korea missile" → ["North", "Korea", "missile"]
-            words = k.split()
-            for word in words:
-                if len(word) > 2:  # 2글자 이상만 추가
-                    optimized_keywords.append(word)
+        # 1. 파라미터 해제 (안전한 get 사용)
+        keywords = search_params.get('keywords', [])
+        themes = search_params.get('themes', [])
+        entities = search_params.get('entities', [])
+        locations = search_params.get('locations', [])
 
-        # 중복 제거 및 최대 5개로 제한
-        optimized_keywords = list(set(optimized_keywords))[:5]
+        # 2. [WHEN] 시간 범위 설정 (가장 중요 ⭐)
+        target_date_str = search_params.get('event_date')
+        if not target_date_str:
+            target_date = datetime.now()
+        else:
+            try:
+                target_date = datetime.strptime(target_date_str, '%Y-%m-%d')
+            except:
+                target_date = datetime.now()
 
-        # 키워드 필터: GDELT Themes는 대문자로 저장되므로 .upper() 필수
-        # OR 조건으로 연결 (하나라도 매칭되면 OK)
-        theme_conditions = [f"Themes LIKE '%{k.upper()}%'" for k in optimized_keywords]
-        theme_query = " OR ".join(theme_conditions) if theme_conditions else "1=1"
+        # 검색 범위: 사건 발생일 기준 ±4일 (총 9일)
+        start_date = (target_date - timedelta(days=4)).strftime('%Y%m%d000000')
+        end_date = (target_date + timedelta(days=4)).strftime('%Y%m%d235959')
 
-        # 국가 필터: Locations 필드 형식 예시: "1#China#CN#CH#39.9042#116.4074"
-        country_query = "1=1"  # 기본값 (모든 국가)
-        if target_countries and len(target_countries) > 0:
-            # #{COUNTRY_CODE}# 패턴으로 검색
-            country_conditions = [f"Locations LIKE '%#{c}#%'" for c in target_countries]
-            country_query = f"({' OR '.join(country_conditions)})"
+        # 3. [WHERE/WHO/WHAT] 내용 조건 구성 (OR 논리 - 유연한 검색)
+        or_conditions = []
 
-        # BigQuery SQL 쿼리 작성
+        # A. 인물/조직 (Persons, Organizations) - 정확도 높음
+        if entities:
+            entity_conds = [f"Persons LIKE '%{e}%' OR Organizations LIKE '%{e}%'" for e in entities[:3]]
+            or_conditions.append(f"({' OR '.join(entity_conds)})")
+
+        # B. 테마 (Themes) - 문맥 파악
+        if themes:
+            theme_conds = [f"Themes LIKE '%{t.upper()}%'" for t in themes[:3]]
+            or_conditions.append(f"({' OR '.join(theme_conds)})")
+
+        # C. 장소 (Locations) - 로컬 이슈
+        if locations:
+            loc_conds = [f"Locations LIKE '%{l}%'" for l in locations[:2]]
+            or_conditions.append(f"({' OR '.join(loc_conds)})")
+
+        # D. 키워드 (URL/DocumentIdentifier) - 최후의 보루
+        if keywords:
+            kw_conds = [f"DocumentIdentifier LIKE '%{k}%'" for k in keywords[:3]]
+            or_conditions.append(f"({' OR '.join(kw_conds)})")
+
+        if not or_conditions:
+            print("⚠️ 유효한 검색 조건이 없어 검색을 중단합니다.")
+            return []
+
+        # 모든 조건을 OR로 묶음 (하나라도 걸리면 OK)
+        final_content_query = f"({' OR '.join(or_conditions)})"
+
+        # 4. [SOURCE] 신뢰할 수 있는 언론사 필터 (AND 논리 - 엄격한 출처 관리)
+        trusted_domains = [
+            'cnn.com', 'bbc.co.uk', 'reuters.com', 'apnews.com', 'nytimes.com',
+            'yna.co.kr', 'koreaherald.com', 'koreatimes.co.kr',
+            'xinhuanet.com', 'globaltimes.cn', 'tass.com', 'rt.com',
+            'aljazeera.com', 'jpost.com', 'kyivindependent.com'
+        ]
+        # repr()을 사용하여 안전하게 문자열 포맷팅
+        domain_filter = f"SourceCommonName IN ({','.join([repr(d) for d in trusted_domains])})"
+
+        # 5. 최종 SQL 작성
         query = f"""
         SELECT
             DocumentIdentifier as url,
             SourceCommonName as source,
-            FORMAT_TIMESTAMP('%Y-%m-%d', PARSE_TIMESTAMP('%Y%m%d%H%M%S', CAST(DATE AS STRING))) as date,
-            SUBSTR(V2Themes, 0, 200) as themes,
+            FORMAT_DATE('%Y-%m-%d', PARSE_TIMESTAMP('%Y%m%d%H%M%S', CAST(DATE AS STRING))) as date,
+            V2Tone as tone,
             Locations,
-            V2Tone as tone
+            Themes
         FROM `gdelt-bq.gdeltv2.gkg_partitioned`
-        WHERE
-            _PARTITIONTIME >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {days} DAY)
-            AND ({theme_query})
-            AND ({country_query})
-            AND DocumentIdentifier IS NOT NULL
-            AND SourceCommonName IS NOT NULL
-            AND LENGTH(DocumentIdentifier) < 500
-            -- 영상 플랫폼 제외 (기사만)
-            AND SourceCommonName NOT IN ('youtube.com', 'twitter.com', 'facebook.com', 'instagram.com')
+        WHERE DATE >= {start_date} AND DATE <= {end_date}
+          AND {domain_filter}          -- 신뢰할 수 있는 언론사
+          AND {final_content_query}    -- 내용 관련성
+          AND DocumentIdentifier IS NOT NULL
+          AND LENGTH(DocumentIdentifier) < 500
         ORDER BY DATE DESC
-        LIMIT {limit}
+        LIMIT 30
         """
 
         try:
-            print(f"📊 GDELT 쿼리 실행 중... (원본: {keywords[:3]}, 최적화: {optimized_keywords}, 국가: {target_countries})")
+            print(f"📊 GDELT 5대 요소 검색 (기준일: {target_date.strftime('%Y-%m-%d')})")
+            print(f"   조건: entities={entities[:2]}, themes={themes[:2]}, keywords={keywords[:2]}")
             query_job = self.client.query(query)
 
             results = []
             for row in query_job:
                 # Locations 필드에서 국가 코드 추출
-                country = self._extract_country_from_locations(
-                    row.Locations, target_countries
-                )
+                country = 'Unknown'
+                if row.Locations:
+                    parts = row.Locations.split('#')
+                    if len(parts) > 2:
+                        country = parts[2]
 
-                results.append(
-                    {
-                        'url': row.url,
-                        'source': row.source or 'Unknown',
-                        'title': '',  # GDELT에는 제목이 없으므로 나중에 본문에서 추출
-                        'date': str(row.date) if row.date else '',
-                        'tone': float(row.tone.split(',')[0]) if row.tone else 0.0,  # Tone은 CSV 형식
-                        'country': country,
-                        'themes': row.themes or '',
-                    }
-                )
+                results.append({
+                    'url': row.url,
+                    'source': row.source,
+                    'title': '',  # GDELT GKG는 제목 없음 (나중에 크롤링)
+                    'date': str(row.date) if row.date else '',
+                    'tone': float(row.tone.split(',')[0]) if row.tone else 0.0,
+                    'country': country,
+                    'themes': row.Themes[:200] if row.Themes else ''
+                })
 
             print(f"✅ GDELT 검색 완료: {len(results)}개 발견")
             return results
 
         except Exception as e:
-            print(f"❌ GDELT 쿼리 실행 실패: {e}")
+            print(f"❌ GDELT 쿼리 실패: {e}")
             return []
-
-    def _extract_country_from_locations(self, locations_str: str, target_countries: list):
-        """
-        GDELT Locations 필드에서 국가 코드 추출
-
-        Locations 형식 예시:
-        "1#United States#US#US#40.7128#-74.0060;1#China#CN#CH#39.9042#116.4074"
-
-        Args:
-            locations_str: GDELT Locations 필드 값
-            target_countries: 검색 대상 국가 리스트
-
-        Returns:
-            국가 코드 (예: 'US', 'CN', 'KR')
-        """
-        if not locations_str:
-            return 'Unknown'
-
-        try:
-            # 세미콜론으로 분리된 여러 위치 정보
-            location_entries = locations_str.split(';')
-
-            for entry in location_entries:
-                parts = entry.split('#')
-                if len(parts) >= 3:
-                    country_code = parts[2]  # 3번째 필드가 ISO 코드
-
-                    # target_countries에 있는 국가 우선 반환
-                    if target_countries and country_code in target_countries:
-                        return country_code
-
-                    # 없으면 첫 번째 국가 반환
-                    if country_code:
-                        return country_code
-
-        except Exception as e:
-            print(f"⚠️ 국가 코드 추출 실패: {e}")
-
-        return 'Unknown'
-
-    def _guess_country_from_source(self, source: str, targets: list = None):
-        """
-        소스 도메인으로 국가 추정 (보조 로직)
-
-        Args:
-            source: 도메인 이름 (예: 'cnn.com')
-            targets: 검색 대상 국가 리스트
-
-        Returns:
-            국가 코드 (예: 'US')
-        """
-        if not source:
-            return 'Unknown'
-
-        source_lower = source.lower()
-
-        # 주요 언론사 매핑
-        country_mapping = {
-            'cnn.com': 'US',
-            'nytimes.com': 'US',
-            'washingtonpost.com': 'US',
-            'foxnews.com': 'US',
-            'bbc.co.uk': 'UK',
-            'bbc.com': 'UK',
-            'theguardian.com': 'UK',
-            'reuters.com': 'UK',
-            'xinhua': 'CN',
-            'globaltimes.cn': 'CN',
-            'chinadaily.com.cn': 'CN',
-            'yonhapnews.co.kr': 'KR',
-            'chosun.com': 'KR',
-            'joongang.co.kr': 'KR',
-            'nhk.or.jp': 'JP',
-            'asahi.com': 'JP',
-            'rt.com': 'RU',
-            'tass.com': 'RU',
-            'france24.com': 'FR',
-            'dw.com': 'DE',
-        }
-
-        for domain, country in country_mapping.items():
-            if domain in source_lower:
-                return country
-
-        # 타겟 국가 중 하나로 추정
-        if targets:
-            for country in targets:
-                if country.lower() in source_lower:
-                    return country
-
-        return 'Unknown'
