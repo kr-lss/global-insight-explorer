@@ -98,37 +98,66 @@ class AnalysisService:
 
         [필수 요구사항]
         1. **사용자는 한국인입니다.** 모든 설명과 요약은 자연스러운 **한국어**로 작성하세요.
-        2. **검색 키워드(search_keywords_en)**는 반드시 **영어(English)**로 작성하세요. 
-           (이유: 전 세계 뉴스(GDELT, Google) 검색 정확도를 높이기 위함)
+        2. **검색 키워드(search_keywords_en)**는 반드시 **영어(English)**로 작성하세요.
+           - ❌ 잘못된 예: "북한 미사일", "경제 위기"
+           - ✅ 올바른 예: "North Korea missile", "economic crisis"
+           - 이유: 전 세계 뉴스(GDELT, Google) 검색은 영어로만 가능합니다
         3. **관련 국가(target_country_codes)**는 해당 이슈와 이해관계가 있는 국가들의 **2자리 ISO 코드**로 작성하세요.
            (예: 한국='KR', 미국='US', 중국='CN', 북한='KP', 러시아='RU', 일본='JP')
 
-        [출력 형식 (JSON Only)]
+        [출력 예시]
         {{
-          "title_kr": "콘텐츠 제목 또는 주제 (한국어)",
-          "summary_kr": "전체 내용 요약 (한국어 3문장 내외)",
-          "topics": ["주제1", "주제2"], 
+          "title_kr": "북한 신형 ICBM 발사와 국제사회 반응",
+          "summary_kr": "북한이 신형 ICBM 화성-18호를 발사했습니다. 미국과 한국은 강력히 규탄했으며, 유엔 안보리 긴급회의가 소집되었습니다.",
+          "topics": ["북한", "미사일", "국제정치"],
           "key_claims": [
             {{
-              "claim_kr": "핵심 주장 1 (한국어)",
-              "search_keywords_en": ["keyword1", "keyword2", "specific term"],
-              "target_country_codes": ["CN", "US"] // 이 주장에 대해 입장을 확인해봐야 할 국가들
+              "claim_kr": "북한의 화성-18호는 사거리 15,000km의 신형 ICBM이다",
+              "search_keywords_en": ["North Korea", "Hwasong-18", "ICBM", "intercontinental ballistic missile", "15000km range"],
+              "target_country_codes": ["KR", "US", "JP", "CN"]
             }},
             {{
-              "claim_kr": "핵심 주장 2 (한국어)",
-              "search_keywords_en": ["keyword3", "keyword4"],
-              "target_country_codes": ["RU", "UA"]
+              "claim_kr": "미국은 추가 제재를 검토 중이다",
+              "search_keywords_en": ["United States", "North Korea sanctions", "additional sanctions", "UN Security Council"],
+              "target_country_codes": ["US", "KR", "CN", "RU"]
             }}
           ]
         }}
 
+        [출력 형식 (JSON Only)]
+        반드시 위 예시와 동일한 형식으로 출력하세요.
+        search_keywords_en은 절대로 한국어를 포함하지 마세요.
         JSON 외에 다른 말은 하지 마세요.
         """
 
         try:
             response = gemini.generate_content(prompt)
             result_text = response.text.strip().replace('```json', '').replace('```', '').strip()
-            return json.loads(result_text)
+            analysis_result = json.loads(result_text)
+
+            # ✅ 영어 키워드 검증 및 자동 생성
+            if 'key_claims' in analysis_result:
+                for claim in analysis_result['key_claims']:
+                    # search_keywords_en이 없거나 비어있으면 claim_kr로 생성 (폴백)
+                    if not claim.get('search_keywords_en') or len(claim.get('search_keywords_en', [])) == 0:
+                        print(f"⚠️ 영어 키워드 누락 감지, claim_kr로 대체: {claim.get('claim_kr', '')[:30]}...")
+                        claim['search_keywords_en'] = [claim.get('claim_kr', '')]
+                    else:
+                        # 한글 포함 여부 확인 (간단한 유니코드 범위 체크)
+                        keywords = claim.get('search_keywords_en', [])
+                        has_korean = any(
+                            any('\uac00' <= char <= '\ud7a3' for char in keyword)
+                            for keyword in keywords
+                        )
+                        if has_korean:
+                            print(f"⚠️ search_keywords_en에 한글 감지! AI가 프롬프트를 따르지 않았습니다: {keywords}")
+                            print(f"   → 이 키워드로 GDELT 검색이 실패할 수 있습니다. claim_kr: {claim.get('claim_kr', '')[:50]}")
+
+                    # target_country_codes가 없으면 빈 배열로 초기화
+                    if 'target_country_codes' not in claim:
+                        claim['target_country_codes'] = []
+
+            return analysis_result
         except Exception as e:
             print(f"❌ AI 1차 분석 실패: {e}")
             raise Exception(f"AI 분석 중 오류가 발생했습니다: {e}")
