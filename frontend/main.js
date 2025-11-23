@@ -177,10 +177,13 @@ document.addEventListener('DOMContentLoaded', () => {
       throw new Error(data.error || '쿼리 최적화 실패');
     }
 
+    // 백엔드 응답 구조: {success: true, data: {search_keywords_en: [...], ...}}
+    const result = data.data || {};
+
     return {
-      search_keywords_en: data.search_keywords || [userInput],
-      target_country_codes: data.target_countries || [],
-      interpreted_intent: data.interpreted_intent || userInput
+      search_keywords_en: result.search_keywords_en || [userInput],
+      target_country_codes: result.target_country_codes || [],
+      interpreted_intent: result.interpreted_intent || userInput
     };
   }
 

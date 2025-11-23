@@ -52,7 +52,7 @@ class GDELTSearcher:
         SELECT
             DocumentIdentifier as url,
             SourceCommonName as source,
-            DATE_FORMAT(PARSE_TIMESTAMP('%Y%m%d%H%M%S', CAST(DATE AS STRING)), '%Y-%m-%d') as date,
+            FORMAT_TIMESTAMP('%Y-%m-%d', PARSE_TIMESTAMP('%Y%m%d%H%M%S', CAST(DATE AS STRING))) as date,
             SUBSTR(V2Themes, 0, 200) as themes,
             Locations,
             V2Tone as tone
