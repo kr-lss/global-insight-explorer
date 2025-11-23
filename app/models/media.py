@@ -70,8 +70,8 @@ def get_country_media(country_code):
     Returns:
         {
             "name": "국가명",
-            "broadcasting": [{"name": "방송사명", "type": "공영/민영"}],
-            "newspapers": [{"name": "신문사명", "type": "공영/민영"}]
+            "broadcasting": [{"name": "방송사명", "type": "국영/민영"}],
+            "newspapers": [{"name": "신문사명", "type": "국영/민영"}]
         }
     """
     # 캐시 로드 (최초 1회만 실행)
@@ -91,7 +91,7 @@ def get_media_info(source_name):
     Returns:
         {
             "name": "언론사명",
-            "type": "공영/민영",
+            "type": "국영/민영",
             "category": "broadcasting/newspaper",
             "country": "국가코드"
         }
@@ -215,6 +215,8 @@ def get_media_credibility(source_name, country_hint=None):
     """
     언론사 정보 조회 (도메인 또는 이름 기반)
 
+    Note: 신뢰도 점수 시스템은 폐지되었으며, 국영/민영 정보만 제공합니다.
+
     Args:
         source_name: 언론사 이름 또는 도메인
         country_hint: 국가 힌트 (선택사항, 검색 최적화용)
@@ -222,10 +224,8 @@ def get_media_credibility(source_name, country_hint=None):
     Returns:
         {
             "country": str,
-            "type": str (국영/민영),
-            "category": str (broadcasting/newspaper),
-            "credibility": int (신뢰도 점수),
-            "bias": str
+            "type": str (국영/민영/알 수 없음),
+            "category": str (broadcasting/newspaper/알 수 없음)
         }
     """
     # 캐시 로드
@@ -254,9 +254,7 @@ def get_media_credibility(source_name, country_hint=None):
                 return {
                     "country": country_code,
                     "type": media.get("type", "알 수 없음"),
-                    "category": "broadcasting",
-                    "credibility": _calculate_credibility(media.get("type"), country_code),
-                    "bias": "중립"  # 기본값
+                    "category": "broadcasting"
                 }
 
         # 신문사 검색
@@ -273,39 +271,12 @@ def get_media_credibility(source_name, country_hint=None):
                 return {
                     "country": country_code,
                     "type": media.get("type", "알 수 없음"),
-                    "category": "newspaper",
-                    "credibility": _calculate_credibility(media.get("type"), country_code),
-                    "bias": "중립"  # 기본값
+                    "category": "newspaper"
                 }
 
     # 찾지 못한 경우 기본값
     return {
         "country": country_hint if country_hint else "Unknown",
         "type": "알 수 없음",
-        "category": "알 수 없음",
-        "credibility": 50,
-        "bias": "알 수 없음",
+        "category": "알 수 없음"
     }
-
-
-def _calculate_credibility(media_type, country_code):
-    """
-    언론사 유형과 국가에 따른 신뢰도 점수 계산
-
-    Args:
-        media_type: "국영" 또는 "민영"
-        country_code: 국가 코드
-
-    Returns:
-        int: 신뢰도 점수 (0-100)
-    """
-    # 기본 점수
-    base_score = 75 if media_type == "국영" else 70
-
-    # 국가별 가중치 (주요 민주 국가는 +10, 기타는 +0)
-    country_bonus = {
-        'US': 5, 'UK': 10, 'FR': 10, 'DE': 10, 'JP': 5,
-        'KR': 5, 'CA': 10, 'AU': 10, 'NL': 10, 'CH': 10
-    }.get(country_code, 0)
-
-    return min(base_score + country_bonus, 90)  # 최대 90점

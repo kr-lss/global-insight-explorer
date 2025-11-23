@@ -20,11 +20,11 @@ YouTube 영상과 뉴스 기사를 분석하여 주요 주장을 추출하고, �
 - 병렬 본문 추출로 빠른 분석 (ThreadPool 10 workers)
 - 제목 및 본문 자동 추출 with trafilatura
 
-### 3️⃣ **언론사 신뢰도 평가**
+### 3️⃣ **언론사 정보 관리**
 - Firestore 기반 언론사 메타데이터 관리 (`media_credibility` 컬렉션)
-- 국영/민영 분류 및 국가별 신뢰도 점수
+- 국영/민영 분류
 - 도메인 및 이름 기반 자동 매칭
-- 실시간 신뢰도 점수 계산
+- 방송사/신문사 카테고리 구분
 
 ### 4️⃣ **분석 히스토리 관리**
 - 분석 기록 자동 저장 (Firestore `analysis_history` 컬렉션)
@@ -146,10 +146,10 @@ Gemini AI 분석 (Vertex AI)
   │   - extract_with_title(url)
   │   - 제목 없으면 출처명을 제목으로
   ↓
-  └─ 언론사 신뢰도 추가
+  └─ 언론사 정보 추가
       - Firestore media_credibility 컬렉션 조회
       - 도메인/이름 기반 매칭
-      - 신뢰도 점수 계산
+      - 국영/민영 정보 태깅
   ↓
 Gemini AI: 입장 분석
   - 각 기사의 입장 (supporting/opposing/neutral)
@@ -223,21 +223,13 @@ Gemini AI: 입장 분석
     └── ...
 ```
 
-### 언론사 신뢰도 점수 계산 로직
+### 언론사 정보 구조
 
-```python
-# 기본 점수
-base_score = 75 if type == "국영" else 70
-
-# 국가별 보너스 (민주주의 지수 기반)
-country_bonus = {
-    'US': 5, 'UK': 10, 'FR': 10, 'DE': 10, 'JP': 5,
-    'KR': 5, 'CA': 10, 'AU': 10, 'NL': 10, 'CH': 10
-}.get(country_code, 0)
-
-# 최종 점수 (최대 90점)
-credibility = min(base_score + country_bonus, 90)
-```
+각 언론사는 다음 정보를 포함합니다:
+- **name**: 언론사 이름 (예: "KBS", "CNN")
+- **domain**: 도메인 (예: "kbs.co.kr", "cnn.com")
+- **type**: 국영 또는 민영
+- **category**: broadcasting (방송사) 또는 newspaper (신문사)
 
 ---
 
@@ -414,8 +406,8 @@ gunicorn app.main:create_app() --bind 0.0.0.0:8080 --workers 4
       "title": "기사 제목",
       "source": "CNN",
       "country": "US",
-      "credibility": 80,
-      "bias": "중립",
+      "media_type": "민영",
+      "media_category": "broadcasting",
       "content": "...",
       "snippet": "...",
       "published_date": "2025-01-15",
@@ -483,8 +475,7 @@ gunicorn app.main:create_app() --bind 0.0.0.0:8080 --workers 4
     "name": "CNN",
     "country": "US",
     "type": "민영",
-    "category": "broadcasting",
-    "credibility": 80
+    "category": "broadcasting"
   }
 }
 ```
@@ -548,62 +539,6 @@ Firestore 캐시 강제 새로고침
 - **Chrome Extension API**
 - **Fetch API** - HTTP 요청
 - **CommonMark** - 마크다운 렌더링
-
----
-
-## 🔧 트러블슈팅
-
-### GDELT 검색 결과 없음
-**원인:**
-- GDELT는 최근 7일 데이터만 제공
-- 영어 키워드로 검색하므로 한국어 전용 콘텐츠는 결과가 적음
-- BigQuery API 할당량 초과
-
-**해결:**
-1. 영어 키워드 직접 입력 또는 AI 최적화 사용
-2. BigQuery 할당량 확인: https://console.cloud.google.com/iam-admin/quotas
-3. `target_country_codes`를 활용하여 검색 범위 좁히기
-
-### YouTube 자막 추출 실패
-**원인:**
-1. 자막이 없는 영상
-2. 자막이 비활성화된 영상
-3. 지역 제한 영상
-
-**해결:**
-- GCS 버킷 설정 후 영상 다운로드 분석 (Gemini 2.0 Flash)
-- 환경 변수 `GCS_BUCKET_NAME` 설정 필요
-
-### Firestore 연결 실패
-**원인:**
-- `GOOGLE_APPLICATION_CREDENTIALS` 미설정
-- 서비스 계정 권한 부족
-
-**해결:**
-```bash
-# 1. 서비스 계정 키 확인
-echo $GOOGLE_APPLICATION_CREDENTIALS
-
-# 2. IAM 권한 확인
-gcloud projects get-iam-policy $GCP_PROJECT \
-  --flatten="bindings[].members" \
-  --filter="bindings.members:serviceAccount:YOUR_SA_EMAIL"
-
-# 3. 필요한 역할 부여
-gcloud projects add-iam-policy-binding $GCP_PROJECT \
-  --member="serviceAccount:YOUR_SA_EMAIL" \
-  --role="roles/datastore.user"
-```
-
-### 병렬 본문 추출 속도 느림
-**원인:**
-- 일부 사이트의 느린 응답 시간
-- 봇 차단 (Cloudflare, reCAPTCHA)
-
-**해결:**
-- ThreadPool worker 수 조정 (기본 10 → 20)
-- 타임아웃 설정 (기본 10초)
-- User-Agent 헤더 변경
 
 ---
 

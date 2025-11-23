@@ -361,14 +361,18 @@ class AnalysisService:
                 meta['content'] = content
                 meta['snippet'] = content[:500]  # 미리보기
 
-                # 신뢰도 추가 (국가/출처 기반)
-                if 'credibility' not in meta:
-                    meta['credibility'] = get_media_credibility(
-                        meta.get('source', ''),
-                        meta.get('country', '')
-                    )
+                # 언론사 정보 추가 (국가/출처 기반)
+                media_info = get_media_credibility(
+                    meta.get('source', ''),
+                    meta.get('country', '')
+                )
 
-                print(f"✅ 추출 성공: {meta.get('source', 'Unknown')} ({meta.get('country', 'Unknown')})")
+                # 국영/민영 정보만 추가
+                if media_info:
+                    meta['media_type'] = media_info.get('type', '알 수 없음')
+                    meta['media_category'] = media_info.get('category', '알 수 없음')
+
+                print(f"✅ 추출 성공: {meta.get('source', 'Unknown')} ({meta.get('country', 'Unknown')}) - {meta.get('media_type', 'Unknown')}")
                 return meta
 
             except Exception as e:
