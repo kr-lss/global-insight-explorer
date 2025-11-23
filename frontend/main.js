@@ -222,36 +222,28 @@ document.addEventListener('DOMContentLoaded', () => {
     clearError();
     aiConfirmationCard.classList.add('hidden'); // 이전 확인 카드 숨김
 
-    // 빠른 검색 모드 확인
-    const skipConfirmation = skipAIConfirmationCheckbox.checked;
-
-    // Case 1: 빠른 검색 모드 OR 사용자 직접 입력이 없는 경우 -> 바로 검색
-    if (skipConfirmation || !userInput) {
-      const claimsData = [...selectedClaimsData];
-
-      // 사용자 입력이 있으면 (빠른 검색 모드에서도) 기본 형태로 추가
-      if (userInput) {
-        claimsData.push({
-          claim_kr: userInput,
-          search_keywords_en: [userInput],
-          target_country_codes: []
-        });
-      }
-
-      await executeFullSearch(claimsData);
+    // Case 1: 사용자 직접 입력이 없는 경우 (체크박스만 선택) -> AI 최적화 불필요, 바로 검색
+    if (!userInput) {
+      await executeFullSearch(selectedClaimsData);
       return;
     }
 
-    // Case 2: 사용자 입력이 있고, 확인 단계를 거치는 경우 -> AI 분석 후 확인 카드 표시
-    await showAIInterpretation(userInput, selectedClaimsData);
+    // Case 2: 사용자 입력이 있는 경우 -> 항상 AI 최적화 수행
+    // "빠른 검색"은 확인 UI만 건너뛰고, AI 최적화는 항상 수행
+    const skipConfirmation = skipAIConfirmationCheckbox.checked;
+    await showAIInterpretation(userInput, selectedClaimsData, skipConfirmation);
   });
 
-  // Step 2: AI 분석 결과를 확인 카드에 표시
-  async function showAIInterpretation(userInput, selectedClaimsData) {
+  // Step 2: AI 분석 결과를 확인 카드에 표시 (또는 빠른 검색 시 바로 실행)
+  async function showAIInterpretation(userInput, selectedClaimsData, skipConfirmation = false) {
     factCheckBtn.disabled = true;
 
     try {
-      showLoading(true, '💭 AI가 질문을 분석하고 있습니다...');
+      // 로딩 메시지 분기
+      const loadingMsg = skipConfirmation
+        ? '🚀 AI 최적화 및 글로벌 검색을 빠르게 수행 중...'
+        : '💭 AI가 질문을 분석하고 있습니다...';
+      showLoading(true, loadingMsg);
 
       // 현재 분석 중인 영상의 맥락 정보
       const context = {
@@ -261,6 +253,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const optimizedData = await optimizeQuery(userInput, context);
 
+      // [핵심 수정] 빠른 검색 모드: AI 최적화 수행 후 즉시 검색 실행
+      if (skipConfirmation) {
+        const claimsData = [...selectedClaimsData];
+        claimsData.push({
+          claim_kr: userInput,
+          search_keywords_en: optimizedData.search_keywords_en || [userInput],
+          target_country_codes: optimizedData.target_country_codes || []
+        });
+
+        showLoading(true, '🔍 전 세계 뉴스를 검색하고 있습니다...');
+        await executeFullSearch(claimsData);
+        return;
+      }
+
+      // 일반 모드: 확인 카드 표시
       // 전역 변수에 저장 (확인 버튼 클릭 시 사용)
       pendingSearchData = {
         selectedClaimsData,
