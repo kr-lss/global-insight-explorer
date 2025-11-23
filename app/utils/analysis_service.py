@@ -321,21 +321,11 @@ class AnalysisService:
             print(f"🔄 병렬 본문 추출 중... ({len(gdelt_results)}개 기사)")
             extracted = self._extract_contents_parallel(gdelt_results)
             print(f"✅ 추출 완료: {len(extracted)}개")
+            return extracted
 
-            # 충분한 결과가 있으면 반환 (Google 비용 절약)
-            if len(extracted) >= 5:
-                return extracted
-
-            # 5개 미만이면 Google 폴백 필요
-            print(f"⚠️ GDELT 결과 부족 ({len(extracted)}개) → Google Search 폴백")
-
-        # 3️⃣ Google Search 폴백 (GDELT 실패 또는 결과 < 5개)
-        print(f"🔍 [2/2] Google Search 폴백...")
-        google_results = self._search_google_fallback(flat_keywords, target_countries)
-
-        # GDELT + Google 합치기
-        all_results = (extracted if gdelt_results else []) + google_results
-        return all_results
+        # GDELT 결과가 없으면 빈 배열 반환
+        print(f"⚠️ GDELT 검색 결과 없음")
+        return []
 
     def _extract_contents_parallel(self, articles_meta: list):
         """
@@ -357,14 +347,17 @@ class AnalysisService:
                 if not url or url == '#':
                     return None
 
-                # 본문 추출
-                content = extractor.extract(url)
+                # 제목과 본문 추출
+                result = extractor.extract_with_title(url)
+                title = result.get('title', '')
+                content = result.get('content', '')
 
                 # 너무 짧으면 무시
                 if not content or len(content) < 100:
                     return None
 
-                # 메타데이터에 본문 추가
+                # 메타데이터에 제목과 본문 추가
+                meta['title'] = title if title else meta.get('source', 'No title')  # 제목이 없으면 출처를 제목으로
                 meta['content'] = content
                 meta['snippet'] = content[:500]  # 미리보기
 

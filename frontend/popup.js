@@ -96,9 +96,8 @@ document.addEventListener('DOMContentLoaded', () => {
       body: JSON.stringify({
         user_input: userInput,
         context: {
-          video_title: context.video_title || '',
-          key_claims: context.key_claims || [],
-          related_countries: currentAnalysis?.related_countries || []
+          title_kr: context.title_kr || '',
+          key_claims: context.key_claims || []
         }
       }),
     });
@@ -125,13 +124,28 @@ document.addEventListener('DOMContentLoaded', () => {
     const customClaimInput = document.getElementById('customClaimInput');
     const userInput = customClaimInput ? customClaimInput.value.trim() : '';
 
-    // 0. 기본 선택된 주장들 수집
-    const selectedClaims = Array.from(
+    // 0. 기본 선택된 주장들 수집 (claims_data 형식으로 변환)
+    const selectedClaimsData = Array.from(
       document.querySelectorAll('#keyClaims input[type="checkbox"]:checked')
-    ).map(input => input.value);
+    ).map(input => {
+      try {
+        return {
+          claim_kr: input.value,
+          search_keywords_en: JSON.parse(input.dataset.keywords || '[]'),
+          target_country_codes: JSON.parse(input.dataset.countries || '[]')
+        };
+      } catch (e) {
+        // 데이터 파싱 실패 시 기본값
+        return {
+          claim_kr: input.value,
+          search_keywords_en: [],
+          target_country_codes: []
+        };
+      }
+    });
 
     // 사용자 입력도 없고, 선택된 주장도 없으면 에러
-    if (!userInput && selectedClaims.length === 0) {
+    if (!userInput && selectedClaimsData.length === 0) {
       showError('Select claims above or enter your own claim');
       return;
     }
@@ -140,7 +154,7 @@ document.addEventListener('DOMContentLoaded', () => {
     factCheckBtn.disabled = true;
 
     try {
-      let allClaims = [...selectedClaims];
+      let claimsData = [...selectedClaimsData];
 
       // ============================================================
       // Step 1: 사용자 입력이 있다면 -> AI 최적화 (Optimize)
@@ -150,7 +164,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 현재 분석 중인 영상의 맥락 정보
         const context = {
-          video_title: currentAnalysis?.title || '',
+          title_kr: currentAnalysis?.title_kr || '',
           key_claims: currentAnalysis?.key_claims || []
         };
 
@@ -161,13 +175,21 @@ document.addEventListener('DOMContentLoaded', () => {
           const keywordsPreview = optimizedData.search_keywords_en.slice(0, 3).join(', ');
           showLoading(true, `🔍 핵심 키워드 [${keywordsPreview}] 등으로 전 세계 검색 중...`);
 
-          // 최적화된 결과를 검색 대상에 추가
-          allClaims.push(userInput);
+          // 최적화된 결과를 claims_data에 추가
+          claimsData.push({
+            claim_kr: userInput,
+            search_keywords_en: optimizedData.search_keywords_en || [userInput],
+            target_country_codes: optimizedData.target_country_codes || []
+          });
 
         } catch (optError) {
           console.warn('AI 최적화 실패, 원본 입력 사용:', optError);
           // 실패해도 멈추지 않고 원본 입력으로 검색 시도 (Fallback)
-          allClaims.push(userInput);
+          claimsData.push({
+            claim_kr: userInput,
+            search_keywords_en: [userInput],
+            target_country_codes: []
+          });
           showLoading(true, '🔍 다양한 관점의 출처를 찾고 있습니다...');
         }
       } else {
@@ -187,10 +209,7 @@ document.addEventListener('DOMContentLoaded', () => {
         body: JSON.stringify({
           url,
           inputType,
-          selected_claims: allClaims,
-          // 수정된 통합 키워드 목록 전송
-          search_keywords: finalSearchKeywords,
-          related_countries: currentAnalysis?.related_countries || []
+          claims_data: claimsData
         }),
       });
 
@@ -228,20 +247,31 @@ document.addEventListener('DOMContentLoaded', () => {
     analysis.key_claims.forEach((claim, index) => {
       const claimEl = document.createElement('div');
       claimEl.className = 'claim-item';
+
+      // claim이 객체인 경우와 문자열인 경우 모두 처리
+      const claimText = typeof claim === 'string' ? claim : claim.claim_kr;
+      const searchKeywords = typeof claim === 'object' ? (claim.search_keywords_en || []) : [];
+      const targetCountries = typeof claim === 'object' ? (claim.target_country_codes || []) : [];
+
       claimEl.innerHTML = `
-        <input type="checkbox" id="claim-${index}" value="${escapeHtml(claim)}">
-        <label for="claim-${index}">${escapeHtml(claim)}</label>
+        <input type="checkbox"
+               id="claim-${index}"
+               value="${escapeHtml(claimText)}"
+               data-keywords='${JSON.stringify(searchKeywords)}'
+               data-countries='${JSON.stringify(targetCountries)}'
+               class="claim-checkbox">
+        <label for="claim-${index}">${escapeHtml(claimText)}</label>
       `;
       keyClaimsDiv.appendChild(claimEl);
     });
     
     // 요약
-    if (analysis.summary) {
+    if (analysis.summary_kr) {
       const summaryDiv = document.createElement('div');
       summaryDiv.className = 'info-section';
       summaryDiv.innerHTML = `
         <h4>📝 요약</h4>
-        <p>${escapeHtml(analysis.summary)}</p>
+        <p>${escapeHtml(analysis.summary_kr)}</p>
       `;
       keyClaimsDiv.appendChild(summaryDiv);
     }

@@ -1,7 +1,17 @@
 """
 언론사 기본 정보
-국가별 대표 방송사/신문사 목록 (공영/민영 구분)
-Firestore에서 동적으로 로드
+국가별 대표 방송사/신문사 목록 (국영/민영 구분)
+Firestore 'media_credibility' 컬렉션에서 동적으로 로드
+
+Firestore 구조:
+/media_credibility
+  ├── KR (국가 코드)
+  │   ├── broadcasting: [{domain, name, type}, ...]
+  │   └── newspapers: [{domain, name, type}, ...]
+  ├── US
+  │   ├── broadcasting: [...]
+  │   └── newspapers: [...]
+  └── ...
 """
 from google.cloud import firestore
 from app.config import config
@@ -20,7 +30,7 @@ _cache_loaded = False
 
 
 def _load_media_from_firestore():
-    """Firestore에서 모든 국가 언론사 정보를 로드하여 캐시"""
+    """Firestore 'media_credibility' 컬렉션에서 모든 국가 언론사 정보를 로드하여 캐시"""
     global _media_cache, _cache_loaded
 
     if _cache_loaded:
@@ -32,16 +42,16 @@ def _load_media_from_firestore():
         return
 
     try:
-        # Firestore의 'countries' 컬렉션에서 모든 문서 로드
-        docs = db.collection('countries').stream()
+        # Firestore의 'media_credibility' 컬렉션에서 모든 문서 로드
+        docs = db.collection('media_credibility').stream()
 
         for doc in docs:
             _media_cache[doc.id] = doc.to_dict()
 
         if _media_cache:
-            print(f"✅ Firestore에서 {len(_media_cache)}개 국가 정보 로드")
+            print(f"✅ Firestore에서 {len(_media_cache)}개 국가 언론사 정보 로드")
         else:
-            print("⚠️ Firestore에 국가 데이터 없음")
+            print("⚠️ Firestore에 언론사 데이터 없음")
 
         _cache_loaded = True
 
@@ -201,28 +211,101 @@ def reload_media_cache():
 
 
 # 하위 호환성을 위한 함수 (기존 코드가 호출하는 경우)
-def get_media_credibility(source_name):
+def get_media_credibility(source_name, country_hint=None):
     """
-    기존 코드 호환용 함수
-    credibility, bias는 제거되었으므로 기본 정보만 반환
-    """
-    media_info = get_media_info(source_name)
+    언론사 정보 조회 (도메인 또는 이름 기반)
 
-    if media_info:
-        return {
-            "country": media_info["country"],
-            "type": media_info["type"],
-            "category": media_info["category"],
-            # 기존 코드 호환을 위해 기본값 제공
-            "credibility": 70,  # 임시 기본값
-            "bias": "알 수 없음",
+    Args:
+        source_name: 언론사 이름 또는 도메인
+        country_hint: 국가 힌트 (선택사항, 검색 최적화용)
+
+    Returns:
+        {
+            "country": str,
+            "type": str (국영/민영),
+            "category": str (broadcasting/newspaper),
+            "credibility": int (신뢰도 점수),
+            "bias": str
         }
+    """
+    # 캐시 로드
+    if not _cache_loaded:
+        _load_media_from_firestore()
+
+    source_name_lower = source_name.lower()
+
+    # 국가 힌트가 있으면 해당 국가만 검색 (성능 최적화)
+    countries_to_search = [country_hint] if country_hint and country_hint in _media_cache else _media_cache.keys()
+
+    for country_code in countries_to_search:
+        country_data = _media_cache.get(country_code, {})
+
+        # 방송사 검색
+        for media in country_data.get("broadcasting", []):
+            media_name_lower = media.get("name", "").lower()
+            media_domain_lower = media.get("domain", "").lower()
+
+            # 이름 또는 도메인 매칭
+            if (media_name_lower in source_name_lower or
+                source_name_lower in media_name_lower or
+                media_domain_lower in source_name_lower or
+                source_name_lower in media_domain_lower):
+
+                return {
+                    "country": country_code,
+                    "type": media.get("type", "알 수 없음"),
+                    "category": "broadcasting",
+                    "credibility": _calculate_credibility(media.get("type"), country_code),
+                    "bias": "중립"  # 기본값
+                }
+
+        # 신문사 검색
+        for media in country_data.get("newspapers", []):
+            media_name_lower = media.get("name", "").lower()
+            media_domain_lower = media.get("domain", "").lower()
+
+            # 이름 또는 도메인 매칭
+            if (media_name_lower in source_name_lower or
+                source_name_lower in media_name_lower or
+                media_domain_lower in source_name_lower or
+                source_name_lower in media_domain_lower):
+
+                return {
+                    "country": country_code,
+                    "type": media.get("type", "알 수 없음"),
+                    "category": "newspaper",
+                    "credibility": _calculate_credibility(media.get("type"), country_code),
+                    "bias": "중립"  # 기본값
+                }
 
     # 찾지 못한 경우 기본값
     return {
-        "country": "Unknown",
+        "country": country_hint if country_hint else "Unknown",
         "type": "알 수 없음",
         "category": "알 수 없음",
         "credibility": 50,
         "bias": "알 수 없음",
     }
+
+
+def _calculate_credibility(media_type, country_code):
+    """
+    언론사 유형과 국가에 따른 신뢰도 점수 계산
+
+    Args:
+        media_type: "국영" 또는 "민영"
+        country_code: 국가 코드
+
+    Returns:
+        int: 신뢰도 점수 (0-100)
+    """
+    # 기본 점수
+    base_score = 75 if media_type == "국영" else 70
+
+    # 국가별 가중치 (주요 민주 국가는 +10, 기타는 +0)
+    country_bonus = {
+        'US': 5, 'UK': 10, 'FR': 10, 'DE': 10, 'JP': 5,
+        'KR': 5, 'CA': 10, 'AU': 10, 'NL': 10, 'CH': 10
+    }.get(country_code, 0)
+
+    return min(base_score + country_bonus, 90)  # 최대 90점

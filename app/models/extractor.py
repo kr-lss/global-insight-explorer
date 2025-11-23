@@ -202,6 +202,94 @@ class YoutubeExtractor(BaseExtractor):
 class ArticleExtractor(BaseExtractor):
     """기사 본문 추출 전략 (향상된 봇 방어 우회)"""
 
+    def extract_with_title(self, url: str) -> dict:
+        """URL에서 제목과 본문을 모두 추출합니다.
+
+        Returns:
+            {'title': str, 'content': str}
+        """
+        try:
+            # 봇 탐지 우회를 위한 현대적인 브라우저 헤더
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Referer': 'https://www.google.com/',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1'
+            }
+
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            response.encoding = response.apparent_encoding  # 인코딩 자동 감지
+
+            soup = BeautifulSoup(response.content, 'html.parser')
+
+            # 제목 추출 시도
+            title = ''
+            title_tag = (
+                soup.find('h1')
+                or soup.find('title')
+                or soup.find(class_='title')
+                or soup.find(class_='article-title')
+                or soup.find(property='og:title')
+            )
+            if title_tag:
+                if title_tag.get('content'):  # og:title의 경우
+                    title = title_tag.get('content')
+                else:
+                    title = title_tag.get_text(strip=True)
+
+            # 1단계: trafilatura 사용 (고품질 텍스트 추출)
+            try:
+                import trafilatura
+                text = trafilatura.extract(response.text)
+                if text and len(text) > 100:
+                    return {'title': title, 'content': text}
+            except ImportError:
+                pass  # trafilatura 없으면 BeautifulSoup 사용
+            except Exception as e:
+                print(f"⚠️ trafilatura 실패, BeautifulSoup 사용: {e}")
+
+            # 2단계: BeautifulSoup 폴백
+            # 불필요한 태그 제거
+            for tag in soup(
+                ['script', 'style', 'nav', 'header', 'footer', 'aside', 'form', 'iframe']
+            ):
+                tag.decompose()
+
+            # 기사 본문 유력 태그 탐색
+            article = (
+                soup.find('article')
+                or soup.find('main')
+                or soup.find(id='content')
+                or soup.find(class_='content')
+                or soup.find(class_='article-body')
+                or soup.body
+            )
+
+            if article:
+                text = article.get_text(separator='\n', strip=True)
+                # 공백 정리
+                lines = (line.strip() for line in text.splitlines())
+                chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+                text = '\n'.join(chunk for chunk in chunks if chunk)
+
+                # 최소 길이 체크
+                if len(text) > 100:
+                    return {'title': title, 'content': text}
+
+            return {'title': title, 'content': ''}
+
+        except requests.RequestException as e:
+            print(f"⚠️ 기사 요청 실패: {e}")
+            return {'title': '', 'content': ''}
+        except Exception as e:
+            print(f"⚠️ 기사 처리 실패: {e}")
+            return {'title': '', 'content': ''}
+
     def extract(self, url: str) -> str:
         try:
             # 봇 탐지 우회를 위한 현대적인 브라우저 헤더
