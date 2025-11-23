@@ -352,8 +352,15 @@ class AnalysisService:
             print(f"✅ 추출 완료: {len(extracted)}개")
             return extracted
 
-        # GDELT 결과가 없으면 빈 배열 반환
-        print(f"⚠️ GDELT 검색 결과 없음")
+        # 3️⃣ GDELT 실패 시 Google Search Grounding 폴백
+        print(f"⚠️ GDELT 검색 결과 없음, Google Search 시도...")
+        google_results = self._search_google_fallback(flat_keywords[:3], target_countries)
+
+        if google_results:
+            print(f"✅ Google Search 완료: {len(google_results)}개 발견")
+            return google_results
+
+        print(f"⚠️ Google Search도 결과 없음")
         return []
 
     def _extract_contents_parallel(self, articles_meta: list):
@@ -455,17 +462,71 @@ class AnalysisService:
                 tools=[search_tool]
             )
 
-            prompt = f"Search for latest news articles about: {query}. Provide details."
+            prompt = f"""Find recent news articles about: {query}
+
+            Return a JSON list of articles with this structure:
+            [
+              {{"title": "article title", "url": "https://...", "source": "source name"}},
+              ...
+            ]
+
+            Only return valid JSON, no other text."""
+
             response = model.generate_content(prompt)
 
-            # TODO: Grounding Metadata에서 실제 URL 추출
-            # 현재는 구조적 URL 추출이 어려우므로 샘플 반환
-            print("⚠️ Google Search 완료 (URL 추출 로직 보완 필요)")
-            return self._get_sample_articles(keywords, target_countries)
+            # Grounding Metadata에서 URL 추출 시도
+            articles = []
+
+            # 1. 응답 텍스트에서 JSON 파싱 시도
+            try:
+                import re
+                text = response.text
+                # JSON 추출
+                json_match = re.search(r'\[.*\]', text, re.DOTALL)
+                if json_match:
+                    import json
+                    parsed = json.loads(json_match.group())
+                    for item in parsed[:10]:  # 최대 10개
+                        if isinstance(item, dict) and 'url' in item:
+                            articles.append({
+                                'title': item.get('title', 'No title'),
+                                'url': item.get('url', '#'),
+                                'source': item.get('source', 'Unknown'),
+                                'snippet': item.get('snippet', '')[:500],
+                                'country': target_countries[0] if target_countries else 'Unknown',
+                                'content': ''
+                            })
+            except Exception as parse_error:
+                print(f"⚠️ JSON 파싱 실패: {parse_error}")
+
+            # 2. Grounding Metadata 확인 (있다면)
+            if hasattr(response, 'candidates') and response.candidates:
+                for candidate in response.candidates:
+                    if hasattr(candidate, 'grounding_metadata'):
+                        metadata = candidate.grounding_metadata
+                        if hasattr(metadata, 'grounding_chunks'):
+                            for chunk in metadata.grounding_chunks[:10]:
+                                if hasattr(chunk, 'web') and hasattr(chunk.web, 'uri'):
+                                    articles.append({
+                                        'title': getattr(chunk.web, 'title', 'No title'),
+                                        'url': chunk.web.uri,
+                                        'source': 'Google Search',
+                                        'snippet': '',
+                                        'country': target_countries[0] if target_countries else 'Unknown',
+                                        'content': ''
+                                    })
+
+            if articles:
+                print(f"✅ Google Search에서 {len(articles)}개 URL 추출 성공")
+                return articles
+
+            # 3. 실패 시 샘플 데이터 반환 (완전 실패 방지)
+            print("⚠️ Google Search URL 추출 실패, 샘플 데이터 반환")
+            return []  # 샘플 데이터 대신 빈 배열 반환
 
         except Exception as e:
             print(f"⚠️ Google Search 실패: {e}")
-            return self._get_sample_articles(keywords, target_countries)
+            return []
 
     def _compare_perspectives_with_gemini(
         self, original_content: str, claims: list, articles: list

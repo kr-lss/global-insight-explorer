@@ -36,9 +36,23 @@ class GDELTSearcher:
         if not self.client or not keywords:
             return []
 
+        # 키워드 최적화: 띄어쓰기 제거, 핵심 단어만 사용
+        # GDELT Themes는 연속된 단어가 아닌 개별 키워드로 저장됨
+        optimized_keywords = []
+        for k in keywords[:3]:  # 최대 3개만 사용 (너무 많으면 매칭 실패)
+            # "North Korea missile" → ["North", "Korea", "missile"]
+            words = k.split()
+            for word in words:
+                if len(word) > 2:  # 2글자 이상만 추가
+                    optimized_keywords.append(word)
+
+        # 중복 제거 및 최대 5개로 제한
+        optimized_keywords = list(set(optimized_keywords))[:5]
+
         # 키워드 필터: GDELT Themes는 대문자로 저장되므로 .upper() 필수
-        theme_conditions = [f"Themes LIKE '%{k.upper()}%'" for k in keywords[:5]]
-        theme_query = " OR ".join(theme_conditions)
+        # OR 조건으로 연결 (하나라도 매칭되면 OK)
+        theme_conditions = [f"Themes LIKE '%{k.upper()}%'" for k in optimized_keywords]
+        theme_query = " OR ".join(theme_conditions) if theme_conditions else "1=1"
 
         # 국가 필터: Locations 필드 형식 예시: "1#China#CN#CH#39.9042#116.4074"
         country_query = "1=1"  # 기본값 (모든 국가)
@@ -71,7 +85,7 @@ class GDELTSearcher:
         """
 
         try:
-            print(f"📊 GDELT 쿼리 실행 중... (키워드: {keywords}, 국가: {target_countries})")
+            print(f"📊 GDELT 쿼리 실행 중... (원본: {keywords[:3]}, 최적화: {optimized_keywords}, 국가: {target_countries})")
             query_job = self.client.query(query)
 
             results = []
