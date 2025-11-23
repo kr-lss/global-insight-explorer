@@ -595,8 +595,8 @@ class AnalysisService:
 
         try:
             # Google Search Grounding 시도
-            search_tool = Tool(
-                google_search=grounding.GoogleSearchRetrieval()
+            search_tool = Tool.from_google_search_retrieval(
+                grounding.GoogleSearchRetrieval()
             )
 
             model = GenerativeModel(
