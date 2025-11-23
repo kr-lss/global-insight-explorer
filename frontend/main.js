@@ -9,6 +9,14 @@ document.addEventListener('DOMContentLoaded', () => {
   const factCheckResultsDiv = document.getElementById('factCheckResults');
   const errorDiv = document.getElementById('error');
 
+  // Human-in-the-loop UI 요소
+  const skipAIConfirmationCheckbox = document.getElementById('skipAIConfirmation');
+  const aiConfirmationCard = document.getElementById('aiConfirmationCard');
+  const confirmSearchBtn = document.getElementById('confirmSearchBtn');
+  const aiInterpretedIntent = document.getElementById('aiInterpretedIntent');
+  const aiKeywords = document.getElementById('aiKeywords');
+  const aiCountries = document.getElementById('aiCountries');
+
   // 히스토리 UI 요소
   const inputTab = document.getElementById('inputTab');
   const popularTab = document.getElementById('popularTab');
@@ -23,6 +31,18 @@ document.addEventListener('DOMContentLoaded', () => {
     : `${window.location.protocol}//${window.location.hostname}${window.location.port ? ':' + window.location.port : ''}`;
 
   let currentAnalysis = null;
+  let pendingSearchData = null; // AI 분석 결과를 임시 저장
+
+  // 빠른 검색 설정 로드
+  const savedSkipConfirmation = localStorage.getItem('skipAIConfirmation');
+  if (savedSkipConfirmation === 'true') {
+    skipAIConfirmationCheckbox.checked = true;
+  }
+
+  // 빠른 검색 설정 변경 시 저장
+  skipAIConfirmationCheckbox.addEventListener('change', () => {
+    localStorage.setItem('skipAIConfirmation', skipAIConfirmationCheckbox.checked);
+  });
 
   // 탭 전환 기능
   tabBtns.forEach(btn => {
@@ -164,7 +184,11 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   }
 
-  // 2차 분석: 다양한 관점 찾기 (AI 최적화 적용)
+  // ============================================================
+  // 2차 분석: 다양한 관점 찾기 (Human-in-the-loop 워크플로우)
+  // ============================================================
+
+  // Step 1: "다양한 출처 찾기" 버튼 클릭
   factCheckBtn.addEventListener('click', async () => {
     const customClaimInput = document.getElementById('customClaimInput');
     const userInput = customClaimInput ? customClaimInput.value.trim() : '';
@@ -196,55 +220,140 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     clearError();
+    aiConfirmationCard.classList.add('hidden'); // 이전 확인 카드 숨김
+
+    // 빠른 검색 모드 확인
+    const skipConfirmation = skipAIConfirmationCheckbox.checked;
+
+    // Case 1: 빠른 검색 모드 OR 사용자 직접 입력이 없는 경우 -> 바로 검색
+    if (skipConfirmation || !userInput) {
+      const claimsData = [...selectedClaimsData];
+
+      // 사용자 입력이 있으면 (빠른 검색 모드에서도) 기본 형태로 추가
+      if (userInput) {
+        claimsData.push({
+          claim_kr: userInput,
+          search_keywords_en: [userInput],
+          target_country_codes: []
+        });
+      }
+
+      await executeFullSearch(claimsData);
+      return;
+    }
+
+    // Case 2: 사용자 입력이 있고, 확인 단계를 거치는 경우 -> AI 분석 후 확인 카드 표시
+    await showAIInterpretation(userInput, selectedClaimsData);
+  });
+
+  // Step 2: AI 분석 결과를 확인 카드에 표시
+  async function showAIInterpretation(userInput, selectedClaimsData) {
     factCheckBtn.disabled = true;
 
     try {
-      let claimsData = [...selectedClaimsData];
+      showLoading(true, '💭 AI가 질문을 분석하고 있습니다...');
 
-      // ============================================================
-      // Step 1: 사용자 입력이 있다면 -> AI 최적화 (Optimize)
-      // ============================================================
-      if (userInput) {
-        showLoading(true, '💭 AI가 질문을 분석하고 있습니다...');
+      // 현재 분석 중인 영상의 맥락 정보
+      const context = {
+        title_kr: currentAnalysis?.title_kr || '',
+        key_claims: currentAnalysis?.key_claims || []
+      };
 
-        // 현재 분석 중인 영상의 맥락 정보
-        const context = {
-          title_kr: currentAnalysis?.title_kr || '',
-          key_claims: currentAnalysis?.key_claims || []
-        };
+      const optimizedData = await optimizeQuery(userInput, context);
 
-        try {
-          const optimizedData = await optimizeQuery(userInput, context);
+      // 전역 변수에 저장 (확인 버튼 클릭 시 사용)
+      pendingSearchData = {
+        selectedClaimsData,
+        userInput,
+        optimizedData
+      };
 
-          // 💡 UX 핵심: 사용자에게 중간 과정 보여주기
-          const keywordsPreview = optimizedData.search_keywords_en.slice(0, 3).join(', ');
-          showLoading(true, `🔍 핵심 키워드 [${keywordsPreview}] 등으로 전 세계 검색 중...`);
+      // UI에 AI 분석 결과 표시
+      aiInterpretedIntent.textContent = optimizedData.interpreted_intent || userInput;
 
-          // 최적화된 결과를 claims_data에 추가
-          claimsData.push({
-            claim_kr: userInput,
-            search_keywords_en: optimizedData.search_keywords_en || [userInput],
-            target_country_codes: optimizedData.target_country_codes || []
-          });
-
-        } catch (optError) {
-          console.warn('AI 최적화 실패, 원본 입력 사용:', optError);
-          // 실패해도 멈추지 않고 원본 입력으로 검색 시도 (Fallback)
-          claimsData.push({
-            claim_kr: userInput,
-            search_keywords_en: [userInput],
-            target_country_codes: []
-          });
-          showLoading(true, '🔍 다양한 관점의 출처를 찾고 있습니다...');
-        }
+      // 키워드 표시
+      aiKeywords.innerHTML = '';
+      if (optimizedData.search_keywords_en && optimizedData.search_keywords_en.length > 0) {
+        optimizedData.search_keywords_en.forEach(keyword => {
+          const tag = document.createElement('span');
+          tag.className = 'keyword-tag';
+          tag.textContent = keyword;
+          aiKeywords.appendChild(tag);
+        });
       } else {
-        // 사용자 입력 없을 땐 바로 검색 메시지
-        showLoading(true, '🔍 다양한 관점의 출처를 찾고 있습니다...');
+        aiKeywords.innerHTML = '<span class="interpretation-text">키워드 없음</span>';
       }
 
-      // ============================================================
-      // Step 2: 검색 실행
-      // ============================================================
+      // 국가 표시
+      aiCountries.innerHTML = '';
+      if (optimizedData.target_country_codes && optimizedData.target_country_codes.length > 0) {
+        optimizedData.target_country_codes.forEach(code => {
+          const tag = document.createElement('span');
+          tag.className = 'country-tag';
+          tag.innerHTML = `${getCountryFlag(code)} ${code}`;
+          aiCountries.appendChild(tag);
+        });
+      } else {
+        aiCountries.innerHTML = '<span class="interpretation-text">전체 국가</span>';
+      }
+
+      // 확인 카드 표시
+      aiConfirmationCard.classList.remove('hidden');
+
+      // 카드로 스크롤
+      setTimeout(() => {
+        aiConfirmationCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }, 100);
+
+    } catch (error) {
+      console.warn('AI 분석 실패, 원본 입력으로 검색합니다:', error);
+
+      // Graceful degradation: AI 분석 실패 시 원본 입력으로 바로 검색
+      const claimsData = [...selectedClaimsData];
+      claimsData.push({
+        claim_kr: userInput,
+        search_keywords_en: [userInput],
+        target_country_codes: []
+      });
+
+      await executeFullSearch(claimsData);
+
+    } finally {
+      showLoading(false);
+      factCheckBtn.disabled = false;
+    }
+  }
+
+  // Step 3: "이대로 검색" 버튼 클릭 -> 실제 검색 실행
+  confirmSearchBtn.addEventListener('click', async () => {
+    if (!pendingSearchData) {
+      showError('검색 데이터가 없습니다. 다시 시도해주세요.');
+      return;
+    }
+
+    const { selectedClaimsData, userInput, optimizedData } = pendingSearchData;
+
+    const claimsData = [...selectedClaimsData];
+    claimsData.push({
+      claim_kr: userInput,
+      search_keywords_en: optimizedData.search_keywords_en || [userInput],
+      target_country_codes: optimizedData.target_country_codes || []
+    });
+
+    // 확인 카드 숨김
+    aiConfirmationCard.classList.add('hidden');
+
+    await executeFullSearch(claimsData);
+  });
+
+  // 실제 검색을 수행하는 통합 함수
+  async function executeFullSearch(claimsData) {
+    factCheckBtn.disabled = true;
+    confirmSearchBtn.disabled = true;
+
+    try {
+      showLoading(true, '🔍 전 세계 뉴스를 검색하고 있습니다...');
+
       const url = urlInput.value.trim();
       const inputType = document.querySelector('input[name="inputType"]:checked').value;
 
@@ -276,8 +385,9 @@ document.addEventListener('DOMContentLoaded', () => {
     } finally {
       showLoading(false);
       factCheckBtn.disabled = false;
+      confirmSearchBtn.disabled = false;
     }
-  });
+  }
 
   // 분석 결과 표시
   function displayAnalysisResults(analysis) {

@@ -103,9 +103,49 @@
             <small class="input-hint">위의 분석 결과를 선택하거나, 여기에 직접 궁금한 주장을 입력하세요.</small>
           </div>
 
+          <!-- 빠른 검색 설정 -->
+          <div class="quick-search-option">
+            <label class="checkbox-label">
+              <input type="checkbox" id="skipAIConfirmation">
+              <span class="checkbox-text">⚡ AI 분석 확인 건너뛰기 (빠른 검색)</span>
+            </label>
+          </div>
+
           <button id="factCheckBtn" class="btn btn-secondary">
             <span class="btn-text">다양한 출처 찾기</span>
           </button>
+
+          <!-- AI 분석 확인 카드 (인라인, 평소에는 숨김) -->
+          <div id="aiConfirmationCard" class="ai-confirmation-card hidden">
+            <div class="card-header">
+              <span class="card-icon">🤖</span>
+              <span class="card-title">AI가 이렇게 이해했어요</span>
+            </div>
+
+            <div class="interpretation-content">
+              <div class="interpretation-item">
+                <strong>핵심 의도:</strong>
+                <span id="aiInterpretedIntent" class="interpretation-text"></span>
+              </div>
+
+              <div class="interpretation-item">
+                <strong>검색 키워드:</strong>
+                <div id="aiKeywords" class="keywords-list"></div>
+              </div>
+
+              <div class="interpretation-item">
+                <strong>대상 국가:</strong>
+                <div id="aiCountries" class="countries-list"></div>
+              </div>
+            </div>
+
+            <div class="confirmation-actions">
+              <button id="confirmSearchBtn" class="btn btn-primary">
+                <span class="btn-text">✓ 이대로 검색</span>
+              </button>
+            </div>
+          </div>
+
           <div id="factCheckResults" class="fact-check-results"></div>
         </div>
       </section>
