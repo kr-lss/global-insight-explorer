@@ -350,6 +350,14 @@ class AnalysisService:
                     "message": "관련성 높은 기사를 찾지 못했습니다."
                 }
 
+        # [디버깅] 최종 응답 데이터 확인
+        import json
+        print(f"\n🔍 최종 응답 데이터:")
+        print(f"   - 국가 수: {len(final_response['data'])}")
+        for code, group in final_response['data'].items():
+            print(f"   - {code}: {group.get('count', 0)}개 기사 (role: {group.get('role', 'N/A')})")
+        print(f"   - 전체 구조: {json.dumps(final_response, ensure_ascii=False, default=str)[:500]}...\n")
+
         return final_response
 
     # ==================================================================

@@ -41,7 +41,7 @@ class Config:
     GEMINI_MODEL_EMBEDDING: str = 'text-embedding-004'   # [신규] 스마트 필터링용 임베딩 모델
 
     # [신규] Smart Filtering settings
-    SIMILARITY_THRESHOLD: float = 0.4  # 유사도 기준점 (0.0 ~ 1.0, 높을수록 엄격)
+    SIMILARITY_THRESHOLD: float = 0.2  # [임시 완화] 유사도 기준점 (0.0 ~ 1.0, 높을수록 엄격)
 
     # Stance analysis settings
     STANCE_TYPES: tuple = ('supporting', 'opposing', 'neutral')

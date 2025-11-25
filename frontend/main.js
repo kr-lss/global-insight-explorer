@@ -803,6 +803,11 @@ document.addEventListener('DOMContentLoaded', () => {
    * [Phase 2] 백엔드의 국가별 데이터(Map)를 받아 리스트로 렌더링
    */
   function displaySourcesNew(data) {
+    // [디버깅] 함수 진입점 확인
+    console.log("📥 displaySourcesNew 진입, data:", data);
+    console.log("📥 data.data:", data?.data);
+    console.log("📥 data.data keys:", data?.data ? Object.keys(data.data) : "없음");
+
     factCheckResultsDiv.innerHTML = ''; // 기존 내용 초기화
 
     // 1. 데이터 유효성 검사 (안전장치)
@@ -814,6 +819,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const countryKeys = Object.keys(data.data);
     if (countryKeys.length === 0) {
+      console.error("❌ data.data가 빈 객체입니다");
       factCheckResultsDiv.innerHTML = '<div class="no-results">관련된 국가별 보도를 찾지 못했습니다.</div>';
       return;
     }
@@ -825,6 +831,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const group = data.data[countryCode];
       const articles = group.articles || [];
       const role = group.role || '관련국';
+
+      // [디버깅] 각 국가 그룹 확인
+      console.log(`🔍 ${countryCode} 그룹:`, group);
+      console.log(`🔍 ${countryCode} articles 개수:`, articles.length);
+      console.log(`🔍 ${countryCode} role:`, role);
 
       // 기사가 없는 국가는 표시하지 않거나 안내 메시지 표시
       if (articles.length === 0) {
