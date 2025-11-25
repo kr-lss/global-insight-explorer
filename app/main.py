@@ -39,15 +39,32 @@ def create_app():
     @app.route('/')
     def index():
         """웹 애플리케이션 메인 페이지"""
-        return send_from_directory(app.static_folder, 'index.html')
+        response = send_from_directory(app.static_folder, 'index.html')
+        # 개발 모드에서는 캐싱 비활성화
+        if config.DEBUG:
+            response.cache_control.no_cache = True
+            response.cache_control.no_store = True
+            response.cache_control.must_revalidate = True
+        return response
 
     @app.route('/<path:path>')
     def serve_static(path):
         """정적 파일 서빙"""
         if os.path.exists(os.path.join(app.static_folder, path)):
-            return send_from_directory(app.static_folder, path)
+            response = send_from_directory(app.static_folder, path)
+            # 개발 모드에서는 캐싱 비활성화
+            if config.DEBUG:
+                response.cache_control.no_cache = True
+                response.cache_control.no_store = True
+                response.cache_control.must_revalidate = True
+            return response
         # 파일이 없으면 index.html로 리다이렉트 (SPA 지원)
-        return send_from_directory(app.static_folder, 'index.html')
+        response = send_from_directory(app.static_folder, 'index.html')
+        if config.DEBUG:
+            response.cache_control.no_cache = True
+            response.cache_control.no_store = True
+            response.cache_control.must_revalidate = True
+        return response
 
     return app
 
