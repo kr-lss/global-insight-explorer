@@ -177,14 +177,18 @@ document.addEventListener('DOMContentLoaded', () => {
       throw new Error(data.error || '쿼리 최적화 실패');
     }
 
-    // 백엔드 응답 구조: {success: true, data: {gdelt_params: {...}, search_keywords_en: [...], ...}}
+    // 백엔드 응답 구조: {success: true, data: {gdelt_params: {...}, target_countries: [...], topic_en: ...}}
     const result = data.data || {};
 
+    // [수정] 백엔드가 반환하는 실제 필드명과 일치시킴
     return {
-      gdelt_params: result.gdelt_params || null,  // 5대 요소 (NEW)
+      issue_type: result.issue_type || 'multi_country',
+      topic_en: result.topic_en || userInput,
+      target_countries: result.target_countries || [],
+      gdelt_params: result.gdelt_params || null,
+      // 하위 호환성을 위한 추가 필드
       search_keywords_en: result.search_keywords_en || [userInput],
-      target_country_codes: result.target_country_codes || [],
-      interpreted_intent: result.interpreted_intent || userInput
+      interpreted_intent: result.topic_en || userInput
     };
   }
 
@@ -278,8 +282,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // 키워드 표시
       aiKeywords.innerHTML = '';
-      if (optimizedData.search_keywords_en && optimizedData.search_keywords_en.length > 0) {
-        optimizedData.search_keywords_en.forEach(keyword => {
+      const keywords = optimizedData.gdelt_params?.keywords || optimizedData.search_keywords_en || [];
+      if (keywords && keywords.length > 0) {
+        keywords.forEach(keyword => {
           const tag = document.createElement('span');
           tag.className = 'keyword-tag';
           tag.textContent = keyword;
@@ -291,11 +296,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // 국가 표시
       aiCountries.innerHTML = '';
-      if (optimizedData.target_country_codes && optimizedData.target_country_codes.length > 0) {
-        optimizedData.target_country_codes.forEach(code => {
+      if (optimizedData.target_countries && optimizedData.target_countries.length > 0) {
+        optimizedData.target_countries.forEach(country => {
+          const code = country.code || country;
+          const role = country.role || '';
           const tag = document.createElement('span');
           tag.className = 'country-tag';
-          tag.innerHTML = `${getCountryFlag(code)} ${code}`;
+          tag.innerHTML = `${getCountryFlag(code)} ${code}${role ? ` (${role})` : ''}`;
           aiCountries.appendChild(tag);
         });
       } else {
