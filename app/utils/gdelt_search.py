@@ -54,32 +54,32 @@ class GDELTSearcher:
             except:
                 target_date = datetime.now()
 
-        # 검색 범위: 사건 발생일 기준 ±4일 (총 9일)
+        # 검색 범위: 사건 발생일 기준 ±N일
         # GDELT DATE 컬럼은 INT64 타입이므로 정수로 변환
-        start_date = int((target_date - timedelta(days=4)).strftime('%Y%m%d000000'))
-        end_date = int((target_date + timedelta(days=4)).strftime('%Y%m%d235959'))
+        start_date = int((target_date - timedelta(days=config.SEARCH_WINDOW_DAYS)).strftime('%Y%m%d000000'))
+        end_date = int((target_date + timedelta(days=config.SEARCH_WINDOW_DAYS)).strftime('%Y%m%d235959'))
 
         # 3. [WHERE/WHO/WHAT] 내용 조건 구성 (OR 논리 - 유연한 검색)
         or_conditions = []
 
         # A. 인물/조직 (Persons, Organizations) - 정확도 높음
         if entities:
-            entity_conds = [f"Persons LIKE '%{e}%' OR Organizations LIKE '%{e}%'" for e in entities[:3]]
+            entity_conds = [f"Persons LIKE '%{e}%' OR Organizations LIKE '%{e}%'" for e in entities[:config.MAX_ENTITIES]]
             or_conditions.append(f"({' OR '.join(entity_conds)})")
 
         # B. 테마 (Themes) - 문맥 파악
         if themes:
-            theme_conds = [f"Themes LIKE '%{t.upper()}%'" for t in themes[:3]]
+            theme_conds = [f"Themes LIKE '%{t.upper()}%'" for t in themes[:config.MAX_THEMES]]
             or_conditions.append(f"({' OR '.join(theme_conds)})")
 
         # C. 장소 (Locations) - 로컬 이슈
         if locations:
-            loc_conds = [f"Locations LIKE '%{l}%'" for l in locations[:2]]
+            loc_conds = [f"Locations LIKE '%{l}%'" for l in locations[:config.MAX_LOCATIONS]]
             or_conditions.append(f"({' OR '.join(loc_conds)})")
 
         # D. 키워드 (URL/DocumentIdentifier) - 최후의 보루
         if keywords:
-            kw_conds = [f"DocumentIdentifier LIKE '%{k}%'" for k in keywords[:3]]
+            kw_conds = [f"DocumentIdentifier LIKE '%{k}%'" for k in keywords[:config.MAX_KEYWORDS]]
             or_conditions.append(f"({' OR '.join(kw_conds)})")
 
         if not or_conditions:
@@ -90,14 +90,8 @@ class GDELTSearcher:
         final_content_query = f"({' OR '.join(or_conditions)})"
 
         # 4. [SOURCE] 신뢰할 수 있는 언론사 필터 (AND 논리 - 엄격한 출처 관리)
-        trusted_domains = [
-            'cnn.com', 'bbc.co.uk', 'reuters.com', 'apnews.com', 'nytimes.com',
-            'yna.co.kr', 'koreaherald.com', 'koreatimes.co.kr',
-            'xinhuanet.com', 'globaltimes.cn', 'tass.com', 'rt.com',
-            'aljazeera.com', 'jpost.com', 'kyivindependent.com'
-        ]
         # repr()을 사용하여 안전하게 문자열 포맷팅
-        domain_filter = f"SourceCommonName IN ({','.join([repr(d) for d in trusted_domains])})"
+        domain_filter = f"SourceCommonName IN ({','.join([repr(d) for d in config.TRUSTED_DOMAINS])})"
 
         # 5. 최종 SQL 작성 (DATE는 INT64 타입이므로 정수끼리 직접 비교)
         query = f"""
@@ -116,7 +110,7 @@ class GDELTSearcher:
           AND DocumentIdentifier IS NOT NULL
           AND LENGTH(DocumentIdentifier) < 500
         ORDER BY DATE DESC
-        LIMIT 30
+        LIMIT {config.GDELT_MAX_RESULTS}
         """
 
         try:

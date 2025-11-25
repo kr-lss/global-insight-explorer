@@ -43,6 +43,27 @@ class Config:
     STANCE_TYPES: tuple = ('supporting', 'opposing', 'neutral')
     CONFIDENCE_DECIMAL_PLACES: int = 2  # 확신도 소수점 자리수
 
+    # GDELT Search settings
+    MAX_ENTITIES: int = 3  # GDELT 검색에 사용할 최대 entities 수
+    MAX_THEMES: int = 3  # GDELT 검색에 사용할 최대 themes 수
+    MAX_LOCATIONS: int = 2  # GDELT 검색에 사용할 최대 locations 수
+    MAX_KEYWORDS: int = 5  # GDELT 검색에 사용할 최대 keywords 수
+    SEARCH_WINDOW_DAYS: int = 4  # 사건 발생일 기준 ±N일 검색
+    GDELT_MAX_RESULTS: int = 30  # GDELT 쿼리 결과 최대 개수
+    THREAD_POOL_WORKERS: int = 10  # 병렬 기사 크롤링 워커 수
+
+    # Trusted news sources for GDELT filtering
+    TRUSTED_DOMAINS: tuple = (
+        # 북미/유럽 주요 언론
+        'cnn.com', 'bbc.co.uk', 'reuters.com', 'apnews.com', 'nytimes.com',
+        # 한국 주요 언론
+        'yna.co.kr', 'koreaherald.com', 'koreatimes.co.kr',
+        # 아시아 주요 언론
+        'xinhuanet.com', 'globaltimes.cn', 'tass.com', 'rt.com',
+        # 중동 주요 언론
+        'aljazeera.com', 'jpost.com', 'kyivindependent.com'
+    )
+
 
 # Global config instance
 config = Config()

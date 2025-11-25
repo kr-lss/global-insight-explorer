@@ -265,7 +265,7 @@ class AnalysisService:
             if 'search_keywords_en' not in optimized_data and 'gdelt_params' in optimized_data:
                 gdelt_params = optimized_data['gdelt_params']
                 all_keywords = gdelt_params.get('keywords', []) + gdelt_params.get('entities', [])
-                optimized_data['search_keywords_en'] = all_keywords[:5]
+                optimized_data['search_keywords_en'] = all_keywords[:config.MAX_KEYWORDS]
 
             print(f"✅ 5대 요소 추출 완료 (confidence: {optimized_data.get('confidence', 0)})")
 
@@ -446,7 +446,7 @@ class AnalysisService:
         all_keywords.extend(gdelt_params.get('entities', []))
         all_keywords.extend(gdelt_params.get('locations', []))
 
-        google_results = self._search_google_fallback(all_keywords[:5], [])
+        google_results = self._search_google_fallback(all_keywords[:config.MAX_KEYWORDS], [])
 
         if google_results:
             print(f"✅ Google Search 완료: {len(google_results)}개 발견")
@@ -457,11 +457,17 @@ class AnalysisService:
 
     def _search_real_articles(self, keywords: list, target_countries: list = None):
         """
-        GDELT Hybrid 검색: GDELT (무료) → Google Search (유료 폴백)
+        GDELT Hybrid 검색 (Legacy Wrapper)
+
+        이 함수는 하위 호환성을 위해 유지됩니다.
+        내부적으로 _search_real_articles_with_params()를 호출합니다.
 
         Args:
             keywords: 영어 검색 키워드 리스트
             target_countries: 타겟 국가 코드 리스트 (예: ["US", "CN"])
+
+        Returns:
+            검색 결과 리스트
         """
         if not keywords:
             return []
@@ -474,36 +480,17 @@ class AnalysisService:
             else:
                 flat_keywords.append(k)
 
-        # 1️⃣ GDELT 검색 시도 (무료, 빠름, 글로벌)
-        print(f"📊 [1/2] GDELT 검색 중... (키워드: {flat_keywords[:3]}, 국가: {target_countries})")
-        gdelt_results = []
-        try:
-            gdelt_results = self.gdelt.search(
-                keywords=flat_keywords[:5],  # 최대 5개 키워드
-                target_countries=target_countries,
-                days=7,  # 최근 7일
-                limit=30  # 최대 30개
-            )
-        except Exception as e:
-            print(f"⚠️ GDELT 검색 실패: {e}")
+        # Legacy 파라미터를 5대 요소 형식으로 변환
+        gdelt_params = {
+            'keywords': flat_keywords[:config.MAX_KEYWORDS],
+            'entities': [],
+            'locations': [],
+            'themes': [],
+            'event_date': datetime.now().strftime('%Y-%m-%d')
+        }
 
-        # 2️⃣ 병렬 본문 추출 (ThreadPool 10개 워커)
-        if gdelt_results:
-            print(f"🔄 병렬 본문 추출 중... ({len(gdelt_results)}개 기사)")
-            extracted = self._extract_contents_parallel(gdelt_results)
-            print(f"✅ 추출 완료: {len(extracted)}개")
-            return extracted
-
-        # 3️⃣ GDELT 실패 시 Google Search Grounding 폴백
-        print(f"⚠️ GDELT 검색 결과 없음, Google Search 시도...")
-        google_results = self._search_google_fallback(flat_keywords[:3], target_countries)
-
-        if google_results:
-            print(f"✅ Google Search 완료: {len(google_results)}개 발견")
-            return google_results
-
-        print(f"⚠️ Google Search도 결과 없음")
-        return []
+        # 새로운 5대 요소 검색 함수 호출
+        return self._search_real_articles_with_params(gdelt_params)
 
     def _extract_contents_parallel(self, articles_meta: list):
         """
@@ -557,8 +544,8 @@ class AnalysisService:
                 print(f"⚠️ 추출 실패: {meta.get('url', 'unknown')} - {e}")
                 return None
 
-        # ThreadPool 병렬 실행 (max_workers=10)
-        with ThreadPoolExecutor(max_workers=10) as executor:
+        # ThreadPool 병렬 실행
+        with ThreadPoolExecutor(max_workers=config.THREAD_POOL_WORKERS) as executor:
             futures = [executor.submit(fetch_one, item) for item in articles_meta]
 
             for future in as_completed(futures):
@@ -583,7 +570,7 @@ class AnalysisService:
             return []
 
         # 기본 쿼리
-        base_query = " ".join(keywords[:7])  # 최대 7단어
+        base_query = " ".join(keywords[:config.MAX_KEYWORDS])
         query = base_query
 
         # 타겟 국가가 있으면 쿼리에 추가
