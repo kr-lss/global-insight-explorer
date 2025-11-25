@@ -259,16 +259,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // [핵심 수정] 빠른 검색 모드: AI 최적화 수행 후 즉시 검색 실행
       if (skipConfirmation) {
-        const claimsData = [...selectedClaimsData];
-        claimsData.push({
-          claim_kr: userInput,
-          gdelt_params: optimizedData.gdelt_params || null,  // 5대 요소 (NEW)
-          search_keywords_en: optimizedData.search_keywords_en || [userInput],
-          target_country_codes: optimizedData.target_country_codes || []
-        });
-
+        // 새로운 방식: optimizedData를 search_params로 전달
         showLoading(true, '🔍 전 세계 뉴스를 검색하고 있습니다...');
-        await executeFullSearch(claimsData);
+        await executeFullSearchNew(optimizedData);
         return;
       }
 
@@ -344,23 +337,16 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    const { selectedClaimsData, userInput, optimizedData } = pendingSearchData;
-
-    const claimsData = [...selectedClaimsData];
-    claimsData.push({
-      claim_kr: userInput,
-      gdelt_params: optimizedData.gdelt_params || null,  // 5대 요소 (NEW)
-      search_keywords_en: optimizedData.search_keywords_en || [userInput],
-      target_country_codes: optimizedData.target_country_codes || []
-    });
+    const { optimizedData } = pendingSearchData;
 
     // 확인 카드 숨김
     aiConfirmationCard.classList.add('hidden');
 
-    await executeFullSearch(claimsData);
+    // 새로운 방식: optimizedData를 search_params로 전달
+    await executeFullSearchNew(optimizedData);
   });
 
-  // 실제 검색을 수행하는 통합 함수
+  // [Legacy] 실제 검색을 수행하는 통합 함수 (기존 claims_data 방식)
   async function executeFullSearch(claimsData) {
     factCheckBtn.disabled = true;
     confirmSearchBtn.disabled = true;
@@ -406,6 +392,47 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
     } catch (err) {
+      showError(err.message);
+    } finally {
+      showLoading(false);
+      factCheckBtn.disabled = false;
+      confirmSearchBtn.disabled = false;
+    }
+  }
+
+  // [New] 새로운 국가별 관점 검색 함수 (search_params 방식)
+  async function executeFullSearchNew(searchParams) {
+    factCheckBtn.disabled = true;
+    confirmSearchBtn.disabled = true;
+
+    try {
+      showLoading(true, '🔍 전 세계 뉴스를 국가별로 검색하고 있습니다...');
+
+      const response = await fetch(`${API_BASE_URL}/api/find-sources`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          search_params: searchParams
+        }),
+      });
+
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || '기사 검색 실패');
+      }
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.error || '기사 검색 실패');
+      }
+
+      // 새로운 국가별 포맷으로 렌더링
+      console.log("✅ 국가별 관점 데이터 수신:", data.result);
+      displaySourcesNew(data.result);
+
+    } catch (err) {
+      console.error("❌ 검색 실패:", err);
       showError(err.message);
     } finally {
       showLoading(false);
