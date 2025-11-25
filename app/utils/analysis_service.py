@@ -637,10 +637,8 @@ class AnalysisService:
         print(f"🔍 Google Search Query: {query}")
 
         try:
-            # Google Search Grounding 시도 (Tool 객체 없이 직접 grounding 사용)
+            # Google Search Grounding 시도
             model = GenerativeModel(config.GEMINI_MODEL_SEARCH)
-
-            # tools 파라미터는 generate_content에 직접 전달
 
             prompt = f"""Find recent news articles about: {query}
 
@@ -652,10 +650,14 @@ class AnalysisService:
 
             Only return valid JSON, no other text."""
 
+            # [수정] Tool 객체로 명시적 래핑
+            from vertexai.generative_models import Tool
+            search_tool = Tool(google_search_retrieval=grounding.GoogleSearchRetrieval())
+
             # Google Search Grounding을 tools로 전달
             response = model.generate_content(
                 prompt,
-                tools=[grounding.GoogleSearchRetrieval()]
+                tools=[search_tool]
             )
 
             # Grounding Metadata에서 URL 추출 시도
