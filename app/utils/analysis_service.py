@@ -484,7 +484,7 @@ class AnalysisService:
         gdelt_params = {
             'keywords': flat_keywords[:config.MAX_KEYWORDS],
             'entities': [],
-            'locations': [],
+            'locations': target_countries if target_countries else [],  # ✅ 국가 필터링 매핑
             'themes': [],
             'event_date': datetime.now().strftime('%Y-%m-%d')
         }
