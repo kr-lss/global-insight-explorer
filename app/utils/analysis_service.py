@@ -1,15 +1,18 @@
 """
 분석 비즈니스 로직을 처리하는 서비스 (Global Insight Explorer v2)
-- 한국어 사용자 최적화 (입력/출력: 한국어, 내부검색: 영어)
-- Google Search Grounding 오류 수정 및 최적화
+- 한국어 사용자 최적화
+- [New] 임베딩 기반 스마트 필터링(Smart Filtering) 적용
+- [Refactor] Config 기반 설정 관리
 """
 import os
 import json
 import hashlib
 from datetime import datetime
+import numpy as np  # 벡터 계산용
 
 import vertexai
 from vertexai.generative_models import GenerativeModel, Tool, grounding
+from vertexai.language_models import TextEmbeddingModel  # [신규] 임베딩 모델
 from google.cloud import firestore
 from google.api_core.exceptions import GoogleAPICallError
 
@@ -22,13 +25,19 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # --- 초기화 ---
 gemini = None
+embedding_model = None
 try:
     vertexai.init(project=config.GCP_PROJECT, location=config.GCP_REGION)
-    # 1차/2차 분석용 일반 모델 (비용 효율적인 Flash 모델 권장)
-    gemini = GenerativeModel('gemini-2.0-flash') 
-    print("✅ (Service) Gemini API 연결 성공")
+
+    # [리팩토링] Config에서 모델명 가져오기
+    gemini = GenerativeModel(config.GEMINI_MODEL_ANALYSIS)
+
+    # [신규] 임베딩 모델 초기화
+    embedding_model = TextEmbeddingModel.from_pretrained(config.GEMINI_MODEL_EMBEDDING)
+
+    print(f"✅ (Service) AI 모델 연결 성공: {config.GEMINI_MODEL_ANALYSIS}, {config.GEMINI_MODEL_EMBEDDING}")
 except Exception as e:
-    print(f"⚠️ (Service) Gemini API 연결 실패: {e}")
+    print(f"⚠️ (Service) AI 모델 연결 실패: {e}")
 
 db = None
 try:
@@ -45,6 +54,31 @@ class AnalysisService:
             'article': ArticleExtractor(),
         }
         self.gdelt = GDELTSearcher()  # GDELT 검색 엔진 초기화
+
+    # ==================================================================
+    # [신규] 임베딩 기반 스마트 필터링 헬퍼 함수
+    # ==================================================================
+    def _get_embedding(self, text: str):
+        """텍스트를 벡터(숫자 배열)로 변환"""
+        if not embedding_model or not text:
+            return None
+        try:
+            # 임베딩 모델은 입력 텍스트를 768차원 등의 벡터로 변환함
+            embeddings = embedding_model.get_embeddings([text])
+            return embeddings[0].values
+        except Exception as e:
+            print(f"⚠️ 임베딩 생성 실패: {e}")
+            return None
+
+    def _calculate_similarity(self, vec1, vec2):
+        """두 벡터 간의 코사인 유사도 계산 (-1.0 ~ 1.0)"""
+        if vec1 is None or vec2 is None:
+            return 0.0
+        try:
+            return np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2))
+        except Exception as e:
+            print(f"⚠️ 유사도 계산 실패: {e}")
+            return 0.0
 
     def _get_extractor(self, input_type: str) -> BaseExtractor:
         extractor = self.extractors.get(input_type)
@@ -224,30 +258,32 @@ class AnalysisService:
             }
 
     # ==================================================================
-    # [Phase 1 핵심] 국가별 개별 쿼리 및 그룹핑 (Step 2)
+    # [Phase 1.5 핵심] 스마트 필터링이 적용된 국가별 검색
     # ==================================================================
     def get_global_perspectives(self, search_params: dict):
         """
         확정된 전략에 따라 국가별로 GDELT를 조회하고(Loop Search),
-        결과를 프론트엔드가 사용하기 편한 구조로 '확정'하여 반환합니다.
+        임베딩 기반 스마트 필터링을 적용하여 관련성 높은 기사만 선별합니다.
         """
         gdelt_base_params = search_params.get('gdelt_params', {})
         target_countries = search_params.get('target_countries', [])
+        topic_en = search_params.get('topic_en', '')
+
+        # 1. [기준점] 주제(Topic)에 대한 임베딩 생성
+        print(f"🧠 주제 임베딩 생성 중: '{topic_en}'")
+        topic_embedding = self._get_embedding(topic_en)
 
         # 최종 결과 컨테이너 (프론트엔드 약속 포맷)
         final_response = {
             "status": "success",
             "issue_type": search_params.get('issue_type', 'multi_country'),
-            "topic": search_params.get('topic_en', ''),
-            "data": {} # 여기에 국가 코드("US", "KR")가 키(Key)로 들어갑니다.
+            "topic": topic_en,
+            "data": {}  # 여기에 국가 코드("US", "KR")가 키(Key)로 들어갑니다.
         }
 
-        all_collected_urls = set() # 중복 기사 방지용 (URL)
+        all_collected_urls = set()  # 중복 기사 방지용 (URL)
 
-        # 🔄 국가별 루프 실행 (Sequential or Parallel)
-        # 속도를 위해 여기도 ThreadPool을 쓸 수 있지만, GDELT 부하를 고려해 순차 처리 권장
-        # (기사 본문 추출은 병렬이므로 괜찮습니다)
-
+        # 🔄 국가별 루프 실행
         for target in target_countries:
             country_code = target.get('code', 'Unknown')
             role_desc = target.get('reason', '')
@@ -256,36 +292,48 @@ class AnalysisService:
 
             # 1. 해당 국가 전용 파라미터 설정
             current_params = gdelt_base_params.copy()
-            current_params['locations'] = [country_code] # GDELT Location 필터 활용
-            # 또는 GDELT SourceCountry 코드가 있다면 그것을 활용 (구현체에 따라 다름)
-            # 여기서는 analysis_service의 _search_real_articles_with_params가
-            # locations를 받아 처리한다고 가정합니다.
+            current_params['locations'] = [country_code]  # GDELT Location 필터 활용
 
-            # 2. 검색 수행 (Limit 5로 제한하여 다양성 확보)
-            # GDELT 쿼리 시 locations 파라미터가 해당 국가 기사를 우선적으로 찾도록 gdelt_search.py가 동작해야 함
+            # 2. GDELT 검색 (수량을 넉넉하게 가져와서 필터링)
             raw_articles = self.gdelt.search(current_params)
 
-            # 3. 필터링 및 정제
-            filtered_articles = []
+            # 3. [스마트 필터링] 임베딩 유사도 검사
+            valid_articles = []
             for article in raw_articles:
-                # 중복 제거
                 if article['url'] in all_collected_urls:
                     continue
 
-                # 국가 코드 검증 (GDELT 결과가 정확하지 않을 수 있으므로)
-                # 만약 검색은 KR로 했는데 결과가 US면 버리거나 'Global'로 뺄 수 있음
-                # 여기서는 일단 수집
+                # 제목이 없는 경우 소스로 대체
+                title = article.get('title') or article.get('source') or ''
 
-                all_collected_urls.add(article['url'])
-                filtered_articles.append(article)
+                # 유사도 계산 (주제 <-> 기사 제목)
+                score = 0.0
+                if topic_embedding:
+                    article_embedding = self._get_embedding(title)
+                    score = self._calculate_similarity(topic_embedding, article_embedding)
+                else:
+                    score = 1.0  # 임베딩 실패 시 통과
 
-                if len(filtered_articles) >= 5: # 국가별 5개 제한 (쿼터제)
-                    break
+                # [필터링] 기준점(config.SIMILARITY_THRESHOLD) 이상만 합격
+                if score >= config.SIMILARITY_THRESHOLD:
+                    article['relevance_score'] = round(score, 3)
+                    valid_articles.append(article)
+                    all_collected_urls.add(article['url'])
+                    print(f"   ✅ 합격 (유사도 {score:.3f}): {title[:50]}...")
+                else:
+                    # 로그: 걸러진 기사 확인용
+                    print(f"   🗑️ 제외 (유사도 {score:.3f}): {title[:50]}...")
 
-            # 4. 본문 추출 (병렬) - 기존 함수 재활용
-            if filtered_articles:
-                print(f"   ↳ {len(filtered_articles)}개 기사 본문 추출 중...")
-                full_articles = self._extract_contents_parallel(filtered_articles)
+            # 관련성 점수 순으로 정렬 (높은 게 위로)
+            valid_articles.sort(key=lambda x: x.get('relevance_score', 0), reverse=True)
+
+            # 상위 5개만 선택 (쿼터제)
+            top_articles = valid_articles[:5]
+
+            # 4. 본문 추출 (병렬)
+            if top_articles:
+                print(f"   ↳ {len(top_articles)}개 기사 본문 추출 (유사도 상위)")
+                full_articles = self._extract_contents_parallel(top_articles)
 
                 # 5. 결과 저장
                 final_response['data'][country_code] = {
@@ -299,7 +347,7 @@ class AnalysisService:
                     "role": role_desc,
                     "count": 0,
                     "articles": [],
-                    "message": "이 국가의 언론 보도를 찾지 못했습니다."
+                    "message": "관련성 높은 기사를 찾지 못했습니다."
                 }
 
         return final_response
@@ -590,7 +638,7 @@ class AnalysisService:
 
         try:
             # Google Search Grounding 시도 (Tool 객체 없이 직접 grounding 사용)
-            model = GenerativeModel('gemini-2.0-flash')
+            model = GenerativeModel(config.GEMINI_MODEL_SEARCH)
 
             # tools 파라미터는 generate_content에 직접 전달
 

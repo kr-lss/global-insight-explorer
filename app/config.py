@@ -35,9 +35,13 @@ class Config:
     MAX_ARTICLES_FOR_AI_ANALYSIS: int = 15  # AI에게 전달할 최대 기사 수
     ERROR_LOG_PREVIEW_LENGTH: int = 500  # 에러 로그에 표시할 응답 길이
 
-    # AI Model settings
-    GEMINI_MODEL_ANALYSIS: str = 'gemini-2.5-flash'  # 1차/2차 분석용
-    GEMINI_MODEL_SEARCH: str = 'gemini-2.0-flash-exp'  # Google Search용
+    # [리팩토링] AI Model settings (중앙 관리)
+    GEMINI_MODEL_ANALYSIS: str = 'gemini-2.0-flash'      # 분석용 메인 모델
+    GEMINI_MODEL_SEARCH: str = 'gemini-2.0-flash'        # 검색용 (Grounding)
+    GEMINI_MODEL_EMBEDDING: str = 'text-embedding-004'   # [신규] 스마트 필터링용 임베딩 모델
+
+    # [신규] Smart Filtering settings
+    SIMILARITY_THRESHOLD: float = 0.4  # 유사도 기준점 (0.0 ~ 1.0, 높을수록 엄격)
 
     # Stance analysis settings
     STANCE_TYPES: tuple = ('supporting', 'opposing', 'neutral')
