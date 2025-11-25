@@ -239,6 +239,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Case 2: 사용자 입력이 있는 경우 -> 항상 AI 최적화 수행
     // "빠른 검색"은 확인 UI만 건너뛰고, AI 최적화는 항상 수행
     const skipConfirmation = skipAIConfirmationCheckbox.checked;
+    console.log(`🔍 빠른 검색 체크박스 상태: ${skipConfirmation ? '체크됨 (즉시 검색)' : '체크 안됨 (확인 카드 표시)'}`);
     await showAIInterpretation(userInput, selectedClaimsData, skipConfirmation);
   });
 
@@ -537,16 +538,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 관련 기사 및 신뢰도 표시 (입장별 그룹화)
   function displaySourcesResults(analysis, articles) {
+    // [디버깅] 함수 진입점과 데이터 구조 확인
+    console.log("📥 displaySourcesResults 진입");
+    console.log("📥 analysis:", analysis);
+    console.log("📥 analysis.results:", analysis.results);
+    console.log("📥 articles:", articles);
+
     factCheckResultsDiv.innerHTML = '';
 
     const results = analysis.results || [];
 
     if (results.length === 0) {
+      console.error("❌ results 배열이 비어있습니다");
       factCheckResultsDiv.innerHTML = '<p class="no-results">다양한 관점의 출처를 찾을 수 없습니다.</p>';
       return;
     }
 
+    console.log(`✅ ${results.length}개 result 처리 시작`);
+
     results.forEach((result, idx) => {
+      console.log(`🔍 Result #${idx}:`, result);
+      console.log(`🔍 Result #${idx} articles:`, result.articles);
+
       const resultEl = document.createElement('div');
       resultEl.className = 'source-result';
 
@@ -556,66 +569,107 @@ document.addEventListener('DOMContentLoaded', () => {
       claimEl.textContent = `📌 "${result.claim}"`;
       resultEl.appendChild(claimEl);
 
-      // 입장 분포 요약
-      const metrics = result.diversity_metrics || {};
-      const distribution = metrics.stance_distribution || {};
-      const totalCount = metrics.total_sources || 0;
+      // ============================================================
+      // [수정] 백엔드 실제 구조 대응: result.articles 직접 사용
+      // ============================================================
+      const resultArticles = result.articles || [];
+      console.log(`📰 Result #${idx}: ${resultArticles.length}개 기사`);
 
-      if (totalCount > 0) {
+      if (resultArticles.length > 0) {
+        // 기사 개수 요약
         const summaryEl = document.createElement('div');
         summaryEl.className = 'stance-summary';
+        const keywords = (result.searched_keywords || []).slice(0, 3).join(', ') || '없음';
         summaryEl.innerHTML = `
-          <h5 class="section-subtitle">입장 분포 (총 ${totalCount}개 기사)</h5>
+          <h5 class="section-subtitle">📰 관련 기사 (총 ${resultArticles.length}개)</h5>
           <div class="stance-stats">
-            <span class="stance-stat supporting">✅ 지지: ${distribution.supporting || 0}개</span>
-            <span class="stance-stat opposing">❌ 반대: ${distribution.opposing || 0}개</span>
-            <span class="stance-stat neutral">⚪ 중립: ${distribution.neutral || 0}개</span>
+            <span class="stance-stat neutral">🔍 검색 키워드: ${keywords}</span>
           </div>
         `;
         resultEl.appendChild(summaryEl);
-      }
 
-      // 지지 입장 기사들
-      const supportingEvidence = result.supporting_evidence || {};
-      if (supportingEvidence.count > 0) {
-        const supportingContainer = createStanceSection(
-          'supporting',
-          '✅ 이 주장을 지지하는 보도',
-          supportingEvidence.articles,
-          supportingEvidence.common_arguments
-        );
-        resultEl.appendChild(supportingContainer);
-      }
+        // 기사 목록 렌더링
+        const articlesContainer = document.createElement('div');
+        articlesContainer.className = 'related-articles';
 
-      // 반대 입장 기사들
-      const opposingEvidence = result.opposing_evidence || {};
-      if (opposingEvidence.count > 0) {
-        const opposingContainer = createStanceSection(
-          'opposing',
-          '❌ 이 주장에 반대하는 보도',
-          opposingEvidence.articles,
-          opposingEvidence.common_arguments
-        );
-        resultEl.appendChild(opposingContainer);
-      }
+        resultArticles.forEach(article => {
+          const articleEl = document.createElement('div');
+          articleEl.className = 'article-card';
 
-      // 중립 보도
-      const neutralCoverage = result.neutral_coverage || {};
-      if (neutralCoverage.count > 0) {
-        const neutralContainer = createStanceSection(
-          'neutral',
-          '⚪ 중립적/사실 중심 보도',
-          neutralCoverage.articles,
-          []
-        );
-        resultEl.appendChild(neutralContainer);
+          // 신뢰도 점수에 따른 색상
+          const credibility = article.credibility || 50;
+          let credibilityClass = 'medium';
+          if (credibility >= 80) credibilityClass = 'high';
+          else if (credibility < 60) credibilityClass = 'low';
+
+          articleEl.innerHTML = `
+            <div class="article-header">
+              <div class="article-source">
+                <span class="source-name">${escapeHtml(article.source || 'Unknown')}</span>
+                <span class="country-flag">${getCountryFlag(article.country)}</span>
+              </div>
+              <div class="article-badges">
+                <div class="credibility-badge ${credibilityClass}">
+                  <span class="credibility-score">${credibility}</span>
+                  <span class="credibility-label">신뢰도</span>
+                </div>
+              </div>
+            </div>
+            <div class="article-title">
+              <a href="${escapeHtml(article.url)}" target="_blank" rel="noopener noreferrer">
+                ${escapeHtml(article.title || '제목 없음')}
+              </a>
+            </div>
+            <div class="article-meta">
+              <span class="bias-tag">${escapeHtml(article.media_type || 'N/A')}</span>
+              <span class="date">${escapeHtml(article.date || 'N/A')}</span>
+            </div>
+            <div class="article-snippet">${escapeHtml(article.snippet || '')}</div>
+          `;
+
+          articlesContainer.appendChild(articleEl);
+        });
+
+        resultEl.appendChild(articlesContainer);
+      } else {
+        // 기사가 없는 경우
+        const noArticlesEl = document.createElement('p');
+        noArticlesEl.className = 'no-results';
+        noArticlesEl.textContent = '관련 기사를 찾지 못했습니다.';
+        resultEl.appendChild(noArticlesEl);
       }
 
       factCheckResultsDiv.appendChild(resultEl);
     });
 
-    // 헬퍼 함수: 입장별 섹션 생성
-    function createStanceSection(stanceType, title, articles, commonArguments) {
+    // 신뢰도 안내
+    const guideEl = document.createElement('div');
+    guideEl.className = 'credibility-guide';
+    guideEl.innerHTML = `
+      <h5 class="guide-title">출처 정보 안내</h5>
+      <div class="guide-content">
+        <div class="guide-item">
+          <span class="guide-badge high">80+</span>
+          <span>주요 국제 언론사</span>
+        </div>
+        <div class="guide-item">
+          <span class="guide-badge medium">60-79</span>
+          <span>일반 언론사</span>
+        </div>
+        <div class="guide-item">
+          <span class="guide-badge low">&lt;60</span>
+          <span>기타 출처</span>
+        </div>
+      </div>
+      <p class="guide-note">
+        점수는 단순 참고용입니다. 각 출처의 내용을 직접 확인하고 판단하세요.
+      </p>
+    `;
+    factCheckResultsDiv.appendChild(guideEl);
+  }
+
+  // 헬퍼 함수: 입장별 섹션 생성 (Legacy 코드 - 향후 제거 예정)
+  function createStanceSection(stanceType, title, articles, commonArguments) {
       const container = document.createElement('div');
       container.className = `stance-section stance-${stanceType}`;
 
