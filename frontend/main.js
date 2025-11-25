@@ -392,7 +392,18 @@ document.addEventListener('DOMContentLoaded', () => {
         throw new Error(data.error || '기사 검색 실패');
       }
 
-      displaySourcesResults(data.result, data.articles);
+      // [핵심 수정] 백엔드가 국가별 포맷으로 반환하는 경우 감지
+      // 새로운 포맷: { status, issue_type, topic, data: { "KR": {...}, "US": {...} } }
+      // 기존 포맷: { results: [...] }
+      if (data.result && data.result.data && typeof data.result.data === 'object') {
+        // 새로운 국가별 포맷
+        console.log("✅ 국가별 포맷 감지, displaySources 호출");
+        displaySourcesNew(data.result);
+      } else {
+        // 기존 입장별 포맷
+        console.log("✅ 기존 포맷 감지, displaySourcesResults 호출");
+        displaySourcesResults(data.result, data.articles);
+      }
 
     } catch (err) {
       showError(err.message);
@@ -729,6 +740,105 @@ document.addEventListener('DOMContentLoaded', () => {
       'ES': '🇪🇸',
     };
     return flags[countryCode] || '🌐';
+  }
+
+  /**
+   * 국가 코드를 국기 이모지로 변환하는 헬퍼 함수
+   */
+  function getFlagEmoji(countryCode) {
+    if (!countryCode || countryCode === 'Unknown') return '🌍';
+    // ISO 코드를 이모지로 변환하는 매직 로직
+    const codePoints = countryCode
+      .toUpperCase()
+      .split('')
+      .map(char => 127397 + char.charCodeAt());
+    return String.fromCodePoint(...codePoints);
+  }
+
+  /**
+   * [Phase 2] 백엔드의 국가별 데이터(Map)를 받아 리스트로 렌더링
+   */
+  function displaySourcesNew(data) {
+    factCheckResultsDiv.innerHTML = ''; // 기존 내용 초기화
+
+    // 1. 데이터 유효성 검사 (안전장치)
+    if (!data || !data.data) {
+      console.error("❌ 잘못된 데이터 형식:", data);
+      factCheckResultsDiv.innerHTML = '<div class="no-results">데이터를 불러오는 데 실패했습니다. (포맷 불일치)</div>';
+      return;
+    }
+
+    const countryKeys = Object.keys(data.data);
+    if (countryKeys.length === 0) {
+      factCheckResultsDiv.innerHTML = '<div class="no-results">관련된 국가별 보도를 찾지 못했습니다.</div>';
+      return;
+    }
+
+    console.log(`✅ ${countryKeys.length}개 국가 데이터 렌더링 시작:`, countryKeys);
+
+    // 2. 국가별 섹션 생성 및 렌더링
+    countryKeys.forEach(countryCode => {
+      const group = data.data[countryCode];
+      const articles = group.articles || [];
+      const role = group.role || '관련국';
+
+      // 기사가 없는 국가는 표시하지 않거나 안내 메시지 표시
+      if (articles.length === 0) {
+        console.log(`⚠️ ${countryCode}: 기사 없음, 건너뜀`);
+        return;
+      }
+
+      console.log(`📰 ${countryCode}: ${articles.length}개 기사 렌더링`);
+
+      // 2-1. 국가 헤더 생성
+      const section = document.createElement('div');
+      section.className = 'country-section';
+      section.style.marginBottom = '24px'; // 섹션 간 간격
+
+      // 국가 코드에 따른 국기 이모지
+      const flag = getFlagEmoji(countryCode);
+
+      section.innerHTML = `
+        <h3 class="country-header" style="border-bottom: 2px solid #eee; padding-bottom: 8px; margin-bottom: 12px;">
+          <span style="font-size: 1.2em; margin-right: 8px;">${flag}</span>
+          ${countryCode} <span style="font-size: 0.8em; color: #666; font-weight: normal;">(${role})</span>
+          <span style="float: right; font-size: 0.8em; color: #888;">${articles.length}건</span>
+        </h3>
+      `;
+
+      // 2-2. 기사 리스트 생성 (Compact View)
+      const ul = document.createElement('ul');
+      ul.className = 'article-list';
+      ul.style.listStyle = 'none';
+      ul.style.padding = '0';
+
+      articles.forEach(article => {
+        const li = document.createElement('li');
+        li.className = 'article-item';
+        li.style.marginBottom = '12px';
+        li.style.padding = '12px';
+        li.style.backgroundColor = '#f8f9fa';
+        li.style.borderRadius = '8px';
+
+        li.innerHTML = `
+          <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+            <span style="font-size: 12px; color: #5f6368; font-weight: bold;">
+              ${escapeHtml(article.source || 'Unknown Source')}
+            </span>
+            <span style="font-size: 11px; color: #888;">${escapeHtml(article.date || '')}</span>
+          </div>
+          <a href="${escapeHtml(article.url)}" target="_blank" style="text-decoration: none; color: #1a0dab; font-weight: 500; font-size: 15px; display: block; line-height: 1.4;">
+            ${escapeHtml(article.title || '제목 없음')}
+          </a>
+        `;
+        ul.appendChild(li);
+      });
+
+      section.appendChild(ul);
+      factCheckResultsDiv.appendChild(section);
+    });
+
+    console.log(`✅ 모든 국가 섹션 렌더링 완료`);
   }
 
   // 인기 콘텐츠 로드
