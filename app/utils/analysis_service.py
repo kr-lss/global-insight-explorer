@@ -164,137 +164,145 @@ class AnalysisService:
 
     def optimize_search_query(self, user_input: str, context: dict):
         """
-        [Step 1] 사용자 입력을 GDELT 5대 요소 검색 전략으로 변환 (Gemini 사용)
-
-        Args:
-            user_input: 사용자의 자연어 질문
-            context: 분석 컨텍스트 {'title_kr', 'key_claims'}
-
-        Returns:
-            {
-                "success": True/False,
-                "data": {
-                    "interpreted_intent": "...",
-                    "gdelt_params": {
-                        "keywords": [...],
-                        "entities": [...],
-                        "locations": [...],
-                        "themes": [...],
-                        "event_date": "YYYY-MM-DD"
-                    },
-                    "search_keywords_en": [...],  # 하위 호환성
-                    "target_country_codes": [...],
-                    "confidence": 0.95
-                },
-                "error": "..." (실패 시)
-            }
+        사용자 질문을 분석하여 '검색 키워드'와 '타겟 국가들'을 추출합니다.
+        이제 찬성/반대가 아니라 '어느 나라의 시각을 볼 것인가'를 결정합니다.
         """
+        if not gemini:
+            raise Exception("Gemini API를 사용할 수 없습니다.")
+
+        prompt = f"""
+        당신은 국제 뉴스 큐레이터입니다. 사용자의 질문을 분석하여 글로벌 시각 비교를 위한 검색 전략을 수립하세요.
+
+        [질문] "{user_input}"
+
+        [분석 목표]
+        1. 이 이슈가 **단일 국가 이슈(Case A)**인지 **국가 간/다국적 이슈(Case B)**인지 판단하세요.
+           - Case A: 주체가 기업, 개인, 또는 한 국가 내부의 사건 (예: 스페이스X 발사, 한국 의대 파업)
+           - Case B: 주체가 국가 정부이거나, 여러 나라가 얽힌 사건 (예: 미중 무역 전쟁, 캄보디아 납치 사건)
+        2. **검색할 국가(target_countries)**를 3~5개 선정하세요.
+           - Case A: 본국(Home) + 경쟁국/관심국(Interested)
+           - Case B: 당사국(Stakeholders) + 인접국/영향받는 국(Neighbors)
+           - **반드시 2자리 ISO 국가 코드(예: US, KR, CN, KH, VN)로 출력하세요.**
+        3. 검색에 사용할 **영어 키워드**와 **GDELT 테마**를 추출하세요.
+           - 범죄 사건의 경우 법률적 용어(Trafficking, Scam 등)를 포함하세요.
+
+        [출력 형식 (JSON Only)]
+        {{
+            "issue_type": "single" 또는 "multi_country",
+            "primary_country": "KR",  // 사건의 중심 국가 (없으면 'Global')
+            "topic_en": "Cambodia job scam and kidnapping",
+            "gdelt_params": {{
+                "keywords": ["human trafficking", "cyber scam", "job fraud", "Cambodia"],
+                "themes": ["CRIME_COMMON_ROBBERY", "HUMAN_TRAFFICKING", "MANMADE_DISASTER_IMPLIED"],
+                "event_date": "2024-01-01" // 추정 날짜
+            }},
+            "target_countries": [
+                {{"code": "KR", "role": "victim", "reason": "피해자 국적"}},
+                {{"code": "KH", "role": "source", "reason": "사건 발생국"}},
+                {{"code": "CN", "role": "involved", "reason": "범죄 연루 및 공조"}},
+                {{"code": "VN", "role": "neighbor", "reason": "인접국 관점"}}
+            ]
+        }}
+        JSON 외에 다른 말은 하지 마세요.
+        """
+
         try:
-            if not gemini:
-                raise Exception("Gemini API를 사용할 수 없습니다.")
-
-            # 문맥 정보 추출 (없으면 기본값)
-            context_title = context.get('title_kr', '')
-            context_claims = context.get('key_claims', [])
-
-            # 5대 요소 추출 프롬프트
-            prompt = f"""
-            당신은 데이터 저널리즘 및 GDELT 검색 전문가입니다.
-            사용자의 질문을 분석하여 글로벌 뉴스 검색에 필요한 5대 요소를 추출하세요.
-
-            [질문] "{user_input}"
-
-            [문맥 정보]
-            제목: {context_title}
-            관련 주장: {str(context_claims)[:500]}
-
-            [필수 지시사항]
-            1. **모든 검색 요소는 반드시 영어(English)**로 작성하세요.
-            2. **event_date**: 사건이 발생한 날짜 (YYYY-MM-DD 형식). 정확한 날짜를 모르면 최근 날짜 추정.
-            3. **entities**: 핵심 인물/조직 영문명 (예: ["Kim Jong Un", "NATO"])
-            4. **locations**: 관련 도시/국가 영문명 (예: ["Seoul", "Ukraine", "Middle East"])
-            5. **themes**: GDELT 테마 코드 (예: ["ARMEDCONFLICT", "SCANDAL", "ECON_INFLATION"])
-               - 주요 테마: ARMEDCONFLICT, SCANDAL, HEALTH_PANDEMIC, ECON_INFLATION, TERROR, ENV_CLIMATECHANGE
-            6. **keywords**: 일반 검색 키워드 (위에 포함되지 않은 추가 단어)
-
-            [출력 형식 (JSON Only)]
-            {{
-                "interpreted_intent": "질문 의도를 한국어로 요약",
-                "gdelt_params": {{
-                    "event_date": "2024-01-15",
-                    "keywords": ["missile", "test"],
-                    "entities": ["Kim Jong Un", "US Defense Department"],
-                    "locations": ["North Korea", "Pacific Ocean"],
-                    "themes": ["ARMEDCONFLICT", "WB_1678_SECURITY_THREAT"]
-                }},
-                "search_keywords_en": ["North Korea", "missile", "test"],
-                "target_country_codes": ["KP", "US", "KR"],
-                "confidence": 0.9
-            }}
-
-            [예시]
-            질문: "북한의 최근 미사일 발사에 대한 미국의 반응은?"
-            출력:
-            {{
-                "interpreted_intent": "북한 미사일 발사에 대한 미국의 공식 입장 및 대응 조치",
-                "gdelt_params": {{
-                    "event_date": "2024-11-20",
-                    "keywords": ["missile", "launch", "response"],
-                    "entities": ["North Korea", "United States", "Pentagon"],
-                    "locations": ["North Korea", "Washington"],
-                    "themes": ["ARMEDCONFLICT", "WB_1678_SECURITY_THREAT"]
-                }},
-                "search_keywords_en": ["North Korea", "missile", "US response"],
-                "target_country_codes": ["KP", "US", "KR"],
-                "confidence": 0.95
-            }}
-
-            JSON만 출력하세요. 다른 말은 하지 마세요.
-            """
-
-            print(f"🤖 5대 요소 검색 쿼리 최적화 중: '{user_input[:50]}...'")
-
-            # Gemini 호출
+            print(f"🤖 이슈 유형 및 타겟 국가 분석 중: '{user_input}'")
             response = gemini.generate_content(prompt)
             result_text = response.text.strip().replace('```json', '').replace('```', '').strip()
-
-            # JSON 파싱
-            optimized_data = json.loads(result_text)
-
-            # 하위 호환성: search_keywords_en이 없으면 keywords에서 생성
-            if 'search_keywords_en' not in optimized_data and 'gdelt_params' in optimized_data:
-                gdelt_params = optimized_data['gdelt_params']
-                all_keywords = gdelt_params.get('keywords', []) + gdelt_params.get('entities', [])
-                optimized_data['search_keywords_en'] = all_keywords[:config.MAX_KEYWORDS]
-
-            print(f"✅ 5대 요소 추출 완료 (confidence: {optimized_data.get('confidence', 0)})")
-
-            return {
-                "success": True,
-                "data": optimized_data
-            }
-
+            return {"success": True, "data": json.loads(result_text)}
         except Exception as e:
             print(f"⚠️ 쿼리 최적화 실패: {e}")
-
-            # Fallback: 입력 텍스트를 그대로 키워드로 사용
+            # Fallback (기본값: 미국, 한국)
             return {
                 "success": False,
-                "error": str(e),
                 "data": {
-                    "interpreted_intent": "Fallback raw search",
-                    "gdelt_params": {
-                        "keywords": [user_input],
-                        "entities": [],
-                        "locations": [],
-                        "themes": [],
-                        "event_date": datetime.now().strftime('%Y-%m-%d')
-                    },
-                    "search_keywords_en": [user_input],
-                    "target_country_codes": [],
-                    "confidence": 0.1
+                    "issue_type": "multi_country",
+                    "target_countries": [{"code": "US"}, {"code": "KR"}],
+                    "gdelt_params": {"keywords": [user_input], "themes": []}
                 }
             }
+
+    # ==================================================================
+    # [Phase 1 핵심] 국가별 개별 쿼리 및 그룹핑 (Step 2)
+    # ==================================================================
+    def get_global_perspectives(self, search_params: dict):
+        """
+        확정된 전략에 따라 국가별로 GDELT를 조회하고(Loop Search),
+        결과를 프론트엔드가 사용하기 편한 구조로 '확정'하여 반환합니다.
+        """
+        gdelt_base_params = search_params.get('gdelt_params', {})
+        target_countries = search_params.get('target_countries', [])
+
+        # 최종 결과 컨테이너 (프론트엔드 약속 포맷)
+        final_response = {
+            "status": "success",
+            "issue_type": search_params.get('issue_type', 'multi_country'),
+            "topic": search_params.get('topic_en', ''),
+            "data": {} # 여기에 국가 코드("US", "KR")가 키(Key)로 들어갑니다.
+        }
+
+        all_collected_urls = set() # 중복 기사 방지용 (URL)
+
+        # 🔄 국가별 루프 실행 (Sequential or Parallel)
+        # 속도를 위해 여기도 ThreadPool을 쓸 수 있지만, GDELT 부하를 고려해 순차 처리 권장
+        # (기사 본문 추출은 병렬이므로 괜찮습니다)
+
+        for target in target_countries:
+            country_code = target.get('code', 'Unknown')
+            role_desc = target.get('reason', '')
+
+            print(f"🌍 [{country_code}] 검색 시작 ({role_desc})...")
+
+            # 1. 해당 국가 전용 파라미터 설정
+            current_params = gdelt_base_params.copy()
+            current_params['locations'] = [country_code] # GDELT Location 필터 활용
+            # 또는 GDELT SourceCountry 코드가 있다면 그것을 활용 (구현체에 따라 다름)
+            # 여기서는 analysis_service의 _search_real_articles_with_params가
+            # locations를 받아 처리한다고 가정합니다.
+
+            # 2. 검색 수행 (Limit 5로 제한하여 다양성 확보)
+            # GDELT 쿼리 시 locations 파라미터가 해당 국가 기사를 우선적으로 찾도록 gdelt_search.py가 동작해야 함
+            raw_articles = self.gdelt.search(current_params)
+
+            # 3. 필터링 및 정제
+            filtered_articles = []
+            for article in raw_articles:
+                # 중복 제거
+                if article['url'] in all_collected_urls:
+                    continue
+
+                # 국가 코드 검증 (GDELT 결과가 정확하지 않을 수 있으므로)
+                # 만약 검색은 KR로 했는데 결과가 US면 버리거나 'Global'로 뺄 수 있음
+                # 여기서는 일단 수집
+
+                all_collected_urls.add(article['url'])
+                filtered_articles.append(article)
+
+                if len(filtered_articles) >= 5: # 국가별 5개 제한 (쿼터제)
+                    break
+
+            # 4. 본문 추출 (병렬) - 기존 함수 재활용
+            if filtered_articles:
+                print(f"   ↳ {len(filtered_articles)}개 기사 본문 추출 중...")
+                full_articles = self._extract_contents_parallel(filtered_articles)
+
+                # 5. 결과 저장
+                final_response['data'][country_code] = {
+                    "role": role_desc,
+                    "count": len(full_articles),
+                    "articles": full_articles
+                }
+            else:
+                # 기사가 없는 경우도 빈 리스트로 명시 (UI 처리를 위해)
+                final_response['data'][country_code] = {
+                    "role": role_desc,
+                    "count": 0,
+                    "articles": [],
+                    "message": "이 국가의 언론 보도를 찾지 못했습니다."
+                }
+
+        return final_response
 
     # ==================================================================
     # 2️⃣ 2차 분석 (Find Sources) - AI 추론 없이 검색만 수행
