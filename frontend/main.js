@@ -261,9 +261,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const optimizedData = await optimizeQuery(userInput, context);
 
+      // [디버깅] 백엔드 응답 확인
+      console.log("📊 optimizeQuery 응답:", optimizedData);
+
       // [핵심 수정] 빠른 검색 모드: AI 최적화 수행 후 즉시 검색 실행
       if (skipConfirmation) {
         // 새로운 방식: optimizedData를 search_params로 전달
+        console.log("🚀 executeFullSearchNew 호출 (빠른 검색)");
         showLoading(true, '🔍 전 세계 뉴스를 검색하고 있습니다...');
         await executeFullSearchNew(optimizedData);
         return;
@@ -349,6 +353,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // 확인 카드 숨김
     aiConfirmationCard.classList.add('hidden');
 
+    // [디버깅] 확인 버튼 클릭 시 데이터 확인
+    console.log("✅ 확인 버튼 클릭 - optimizedData:", optimizedData);
+
     // 새로운 방식: optimizedData를 search_params로 전달
     await executeFullSearchNew(optimizedData);
   });
@@ -409,18 +416,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // [New] 새로운 국가별 관점 검색 함수 (search_params 방식)
   async function executeFullSearchNew(searchParams) {
+    console.log("🔍 executeFullSearchNew 시작, searchParams:", searchParams);
+
     factCheckBtn.disabled = true;
     confirmSearchBtn.disabled = true;
 
     try {
       showLoading(true, '🔍 전 세계 뉴스를 국가별로 검색하고 있습니다...');
 
+      const requestBody = { search_params: searchParams };
+      console.log("📤 API 요청 데이터:", requestBody);
+
       const response = await fetch(`${API_BASE_URL}/api/find-sources`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          search_params: searchParams
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
