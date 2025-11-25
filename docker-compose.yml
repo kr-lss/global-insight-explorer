@@ -17,6 +17,7 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json
     volumes:
       - ./app:/app/app
+      - ./frontend:/app/frontend
       - ./credentials.json:/app/credentials.json:ro
     restart: unless-stopped
     healthcheck:

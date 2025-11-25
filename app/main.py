@@ -28,6 +28,18 @@ def create_app():
 
     # CORS 설정 (모든 origin 허용)
     CORS(app, resources={r"/*": {"origins": "*"}})
+    
+    if config.DEBUG:
+        @app.after_request
+        def add_header(response):
+            """
+            모든 응답에 대해 캐시를 무효화하는 헤더를 추가합니다.
+            브라우저가 파일을 저장하지 않고 매번 서버에 요청하게 만듭니다.
+            """
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+            return response
 
     # 블루프린트 등록
     app.register_blueprint(health_bp)

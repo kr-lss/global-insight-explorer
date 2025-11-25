@@ -3,6 +3,7 @@
 - 한국어 사용자 최적화
 - [New] 임베딩 기반 스마트 필터링(Smart Filtering) 적용
 - [Refactor] Config 기반 설정 관리
+- [Update] 기사 제목 한글 번역 기능 추가
 """
 import os
 import json
@@ -79,6 +80,27 @@ class AnalysisService:
         except Exception as e:
             print(f"⚠️ 유사도 계산 실패: {e}")
             return 0.0
+
+    def _translate_to_korean(self, text: str) -> str:
+        """
+        [New] Gemini를 사용하여 기사 제목을 자연스러운 한국어로 번역
+        """
+        if not text or not gemini:
+            return text
+        try:
+            prompt = f"""
+            Translate the following news headline into natural Korean.
+            Do not explain, just provide the translation.
+            
+            Headline: "{text}"
+            Korean translation:
+            """
+            # 빠른 응답을 위해 temperature 낮춤
+            response = gemini.generate_content(prompt, generation_config={"temperature": 0.1})
+            return response.text.strip()
+        except Exception as e:
+            print(f"⚠️ 번역 실패: {e}")
+            return text
 
     def _get_extractor(self, input_type: str) -> BaseExtractor:
         extractor = self.extractors.get(input_type)
@@ -319,10 +341,10 @@ class AnalysisService:
                     article['relevance_score'] = round(score, 3)
                     valid_articles.append(article)
                     all_collected_urls.add(article['url'])
-                    print(f"   ✅ 합격 (유사도 {score:.3f}): {title[:50]}...")
+                    # print(f"   ✅ 합격 (유사도 {score:.3f}): {title[:50]}...")
                 else:
-                    # 로그: 걸러진 기사 확인용
-                    print(f"   🗑️ 제외 (유사도 {score:.3f}): {title[:50]}...")
+                    pass
+                    # print(f"   🗑️ 제외 (유사도 {score:.3f}): {title[:50]}...")
 
             # 관련성 점수 순으로 정렬 (높은 게 위로)
             valid_articles.sort(key=lambda x: x.get('relevance_score', 0), reverse=True)
@@ -330,9 +352,9 @@ class AnalysisService:
             # 상위 5개만 선택 (쿼터제)
             top_articles = valid_articles[:5]
 
-            # 4. 본문 추출 (병렬)
+            # 4. 본문 추출 (병렬) + [New] 제목 번역
             if top_articles:
-                print(f"   ↳ {len(top_articles)}개 기사 본문 추출 (유사도 상위)")
+                print(f"   ↳ {len(top_articles)}개 기사 본문 추출 및 번역")
                 full_articles = self._extract_contents_parallel(top_articles)
 
                 # 5. 결과 저장
@@ -350,14 +372,6 @@ class AnalysisService:
                     "message": "관련성 높은 기사를 찾지 못했습니다."
                 }
 
-        # [디버깅] 최종 응답 데이터 확인
-        import json
-        print(f"\n🔍 최종 응답 데이터:")
-        print(f"   - 국가 수: {len(final_response['data'])}")
-        for code, group in final_response['data'].items():
-            print(f"   - {code}: {group.get('count', 0)}개 기사 (role: {group.get('role', 'N/A')})")
-        print(f"   - 전체 구조: {json.dumps(final_response, ensure_ascii=False, default=str)[:500]}...\n")
-
         return final_response
 
     # ==================================================================
@@ -368,32 +382,6 @@ class AnalysisService:
     ):
         """
         [Step 2] 확정된 검색 전략(claims_data)으로 실제 GDELT 5대 요소 검색 수행
-        * 이제 이 함수는 AI 추론을 하지 않고, 전달받은 파라미터로 검색 수행에만 집중합니다.
-
-        Args:
-            url: 원본 콘텐츠 URL (현재는 사용하지 않음)
-            input_type: 콘텐츠 타입 (현재는 사용하지 않음)
-            claims_data: 주장 정보 리스트
-                [
-                    {
-                        "claim_kr": "한국어 주장",
-                        "gdelt_params": {  # 5대 요소 (신규)
-                            "keywords": [...],
-                            "entities": [...],
-                            "locations": [...],
-                            "themes": [...],
-                            "event_date": "YYYY-MM-DD"
-                        },
-                        "search_keywords_en": [...],  # 하위 호환성
-                        "target_country_codes": [...]
-                    },
-                    ...
-                ]
-
-        Returns:
-            (result, articles) tuple
-            - result: 각 주장별 검색 결과 리스트
-            - articles: 모든 기사를 평탄화한 리스트
         """
         all_results = []
         all_articles = []
@@ -424,8 +412,6 @@ class AnalysisService:
                 print(f"🔍 '{claim_kr[:15]}...' 검색 (Legacy 모드: keywords={search_keywords})")
             else:
                 print(f"🔍 '{claim_kr[:15]}...' 검색 (5대 요소 모드)")
-                print(f"   entities={gdelt_params.get('entities', [])} locations={gdelt_params.get('locations', [])}")
-                print(f"   themes={gdelt_params.get('themes', [])} keywords={gdelt_params.get('keywords', [])}")
 
             # GDELT 5대 요소 검색 실행
             articles = self._search_real_articles_with_params(gdelt_params)
@@ -448,40 +434,9 @@ class AnalysisService:
         # AI 분석 없이 검색 결과만 반환
         return {"results": all_results}, final_articles
 
-    def _generate_keywords_on_the_fly(self, claim_kr: str):
-        """사용자 입력 주장을 위한 영어 키워드 및 타겟 국가 생성"""
-        if not gemini:
-            return {"keywords": [claim_kr], "countries": []}
-
-        try:
-            prompt = f"""
-            Translate this Korean claim into 2-3 English search keywords for news verification.
-            Also suggest 2 relevant country codes (ISO 3166-1 alpha-2).
-            Claim: "{claim_kr}"
-            Output JSON: {{"keywords": ["kw1", "kw2"], "countries": ["US", "KR"]}}
-            """
-            response = gemini.generate_content(prompt)
-            text = response.text.strip().replace('```json', '').replace('```', '').strip()
-            return json.loads(text)
-        except Exception as e:
-            print(f"⚠️ 키워드 생성 실패: {e}")
-            return {"keywords": [claim_kr], "countries": []}
-
     def _search_real_articles_with_params(self, gdelt_params: dict):
         """
         GDELT 5대 요소 검색 with Google Search Fallback
-
-        Args:
-            gdelt_params: {
-                'keywords': [...],
-                'entities': [...],
-                'locations': [...],
-                'themes': [...],
-                'event_date': 'YYYY-MM-DD'
-            }
-
-        Returns:
-            검색 결과 리스트
         """
         if not gdelt_params:
             return []
@@ -519,52 +474,9 @@ class AnalysisService:
         print(f"⚠️ Google Search도 결과 없음")
         return []
 
-    def _search_real_articles(self, keywords: list, target_countries: list = None):
-        """
-        GDELT Hybrid 검색 (Legacy Wrapper)
-
-        이 함수는 하위 호환성을 위해 유지됩니다.
-        내부적으로 _search_real_articles_with_params()를 호출합니다.
-
-        Args:
-            keywords: 영어 검색 키워드 리스트
-            target_countries: 타겟 국가 코드 리스트 (예: ["US", "CN"])
-
-        Returns:
-            검색 결과 리스트
-        """
-        if not keywords:
-            return []
-
-        # 키워드 리스트 평탄화
-        flat_keywords = []
-        for k in keywords:
-            if isinstance(k, list):
-                flat_keywords.extend(k)
-            else:
-                flat_keywords.append(k)
-
-        # Legacy 파라미터를 5대 요소 형식으로 변환
-        gdelt_params = {
-            'keywords': flat_keywords[:config.MAX_KEYWORDS],
-            'entities': [],
-            'locations': target_countries if target_countries else [],  # ✅ 국가 필터링 매핑
-            'themes': [],
-            'event_date': datetime.now().strftime('%Y-%m-%d')
-        }
-
-        # 새로운 5대 요소 검색 함수 호출
-        return self._search_real_articles_with_params(gdelt_params)
-
     def _extract_contents_parallel(self, articles_meta: list):
         """
-        병렬 처리로 기사 본문 추출 (ThreadPool)
-
-        Args:
-            articles_meta: GDELT 검색 결과 [{url, source, title, date, tone, country}, ...]
-
-        Returns:
-            본문이 추출된 기사 리스트
+        병렬 처리로 기사 본문 추출 및 [New] 제목 번역 (ThreadPool)
         """
         extracted = []
         extractor = self.extractors['article']
@@ -587,6 +499,10 @@ class AnalysisService:
 
                 # 메타데이터에 제목과 본문 추가
                 meta['title'] = title if title else meta.get('source', 'No title')  # 제목이 없으면 출처를 제목으로
+                
+                # [New] 제목 한국어 번역 수행 (병렬 처리의 이점 활용)
+                meta['title_kr'] = self._translate_to_korean(meta['title'])
+                
                 meta['content'] = content
                 meta['snippet'] = content[:500]  # 미리보기
 
@@ -601,7 +517,7 @@ class AnalysisService:
                     meta['media_type'] = media_info.get('type', '알 수 없음')
                     meta['media_category'] = media_info.get('category', '알 수 없음')
 
-                print(f"✅ 추출 성공: {meta.get('source', 'Unknown')} ({meta.get('country', 'Unknown')}) - {meta.get('media_type', 'Unknown')}")
+                print(f"✅ 추출/번역 성공: {meta.get('source', 'Unknown')}")
                 return meta
 
             except Exception as e:
@@ -620,24 +536,13 @@ class AnalysisService:
         return extracted
 
     def _search_google_fallback(self, keywords: list, target_countries: list = None):
-        """
-        Google Search 폴백 (GDELT 실패 시)
-
-        Args:
-            keywords: 영어 검색 키워드 리스트
-            target_countries: 타겟 국가 코드 리스트
-
-        Returns:
-            검색 결과 리스트
-        """
+        """Google Search 폴백 (GDELT 실패 시)"""
         if not keywords:
             return []
 
-        # 기본 쿼리
         base_query = " ".join(keywords[:config.MAX_KEYWORDS])
         query = base_query
 
-        # 타겟 국가가 있으면 쿼리에 추가
         if target_countries and len(target_countries) > 0:
             country_query = " OR ".join(target_countries)
             query = f"{base_query} ({country_query})"
@@ -645,149 +550,54 @@ class AnalysisService:
         print(f"🔍 Google Search Query: {query}")
 
         try:
-            # Google Search Grounding 시도
             model = GenerativeModel(config.GEMINI_MODEL_SEARCH)
-
             prompt = f"""Find recent news articles about: {query}
-
             Return a JSON list of articles with this structure:
-            [
-              {{"title": "article title", "url": "https://...", "source": "source name"}},
-              ...
-            ]
+            [ {{"title": "article title", "url": "https://...", "source": "source name"}}, ... ]
+            Only return valid JSON."""
 
-            Only return valid JSON, no other text."""
-
-            # [수정] Tool 객체로 명시적 래핑
-            from vertexai.generative_models import Tool
             search_tool = Tool(google_search_retrieval=grounding.GoogleSearchRetrieval())
+            response = model.generate_content(prompt, tools=[search_tool])
 
-            # Google Search Grounding을 tools로 전달
-            response = model.generate_content(
-                prompt,
-                tools=[search_tool]
-            )
-
-            # Grounding Metadata에서 URL 추출 시도
             articles = []
-
-            # 1. 응답 텍스트에서 JSON 파싱 시도
             try:
                 import re
                 text = response.text
-                # JSON 추출
                 json_match = re.search(r'\[.*\]', text, re.DOTALL)
                 if json_match:
-                    import json
                     parsed = json.loads(json_match.group())
-                    for item in parsed[:10]:  # 최대 10개
+                    for item in parsed[:10]:
                         if isinstance(item, dict) and 'url' in item:
-                            articles.append({
-                                'title': item.get('title', 'No title'),
-                                'url': item.get('url', '#'),
-                                'source': item.get('source', 'Unknown'),
-                                'snippet': item.get('snippet', '')[:500],
-                                'country': target_countries[0] if target_countries else 'Unknown',
-                                'content': ''
-                            })
-            except Exception as parse_error:
-                print(f"⚠️ JSON 파싱 실패: {parse_error}")
-
-            # 2. Grounding Metadata 확인 (있다면)
-            if hasattr(response, 'candidates') and response.candidates:
-                for candidate in response.candidates:
+                            item['country'] = target_countries[0] if target_countries else 'Unknown'
+                            # 구글 검색 결과도 번역
+                            item['title_kr'] = self._translate_to_korean(item.get('title', ''))
+                            articles.append(item)
+            except Exception:
+                pass
+            
+            if not articles and hasattr(response, 'candidates'):
+                 for candidate in response.candidates:
                     if hasattr(candidate, 'grounding_metadata'):
-                        metadata = candidate.grounding_metadata
-                        if hasattr(metadata, 'grounding_chunks'):
-                            for chunk in metadata.grounding_chunks[:10]:
-                                if hasattr(chunk, 'web') and hasattr(chunk.web, 'uri'):
-                                    articles.append({
-                                        'title': getattr(chunk.web, 'title', 'No title'),
-                                        'url': chunk.web.uri,
-                                        'source': 'Google Search',
-                                        'snippet': '',
-                                        'country': target_countries[0] if target_countries else 'Unknown',
-                                        'content': ''
-                                    })
+                        for chunk in candidate.grounding_metadata.grounding_chunks[:10]:
+                            if hasattr(chunk, 'web'):
+                                articles.append({
+                                    'title': chunk.web.title,
+                                    'title_kr': self._translate_to_korean(chunk.web.title),
+                                    'url': chunk.web.uri,
+                                    'source': 'Google Search',
+                                    'country': target_countries[0] if target_countries else 'Unknown'
+                                })
 
             if articles:
                 print(f"✅ Google Search에서 {len(articles)}개 URL 추출 성공")
+                # 본문 추출은 별도로 해야 함 (여기서는 URL만 반환하거나 그대로 사용)
                 return articles
 
-            # 3. 실패 시 샘플 데이터 반환 (완전 실패 방지)
-            print("⚠️ Google Search URL 추출 실패, 샘플 데이터 반환")
-            return []  # 샘플 데이터 대신 빈 배열 반환
+            return []
 
         except Exception as e:
             print(f"⚠️ Google Search 실패: {e}")
             return []
-
-    def _compare_perspectives_with_gemini(
-        self, original_content: str, claims: list, articles: list
-    ):
-        if not gemini:
-            raise Exception("Gemini API를 사용할 수 없습니다.")
-
-        original_content = original_content[:config.MAX_CONTENT_LENGTH_SECOND_ANALYSIS]
-        
-        # 기사 목록 텍스트화
-        articles_text = "\n".join([
-            f"- [{a['source']} ({a['country']})] {a['title']}: {a['snippet']}"
-            for a in articles
-        ])
-
-        prompt = f"""
-        당신은 중립적인 '국제 뉴스 분석가'입니다.
-        사용자가 선택한 주장에 대해, 세계 각국의 언론이 어떻게 보도하고 있는지 객관적으로 비교 분석해주세요.
-        **반드시 한국어로 답변하세요.**
-
-        **절대로 특정 주장이 사실인지 거짓인지 단정 짓지 마세요.**
-        오직 'A 언론사는 이렇게 보도했고, B 언론사는 저렇게 보도했다'는 차이점과 맥락을 보여주는 데 집중하세요.
-
-        [분석 대상 주장]
-        {chr(10).join([f'- {c}' for c in claims])}
-
-        [수집된 기사 데이터]
-        {articles_text}
-
-        [지시사항]
-        1. 각 주장에 대해 수집된 기사들이 **지지(Supporting)**하는지, **반박(Opposing)**하는지, 또는 **중립/관련없음**인지 분석하세요.
-        2. 국가별 언론의 시각 차이가 있다면 지적해주세요 (예: 미국 언론은 경제적 측면을, 중국 언론은 정치적 측면을 강조).
-        3. **판단은 사용자에게 맡기고**, 다양한 관점이 있다는 것만 보여주세요.
-
-        [응답 형식 (JSON)]
-        {{
-          "results": [
-            {{
-              "claim": "주장 내용",
-              "perspectives": [
-                 {{
-                   "country": "US",
-                   "media": "CNN",
-                   "stance": "Supporting",
-                   "viewpoint": "이 기사는 ~~한 근거를 들어 해당 주장을 지지하는 논조입니다."
-                 }},
-                 {{
-                   "country": "CN",
-                   "media": "Global Times",
-                   "stance": "Opposing",
-                   "viewpoint": "반면 이 기사는 ~~라며 다른 관점을 제시합니다."
-                 }}
-              ],
-              "summary_kr": "종합해보면 미국 언론은 경제적 측면을, 중국 언론은 정치적 측면을 강조하고 있습니다. (판단은 사용자 몫)"
-            }}
-          ]
-        }}
-        """
-        
-        try:
-            response = gemini.generate_content(prompt)
-            result_text = response.text.strip().replace('```json', '').replace('```', '').strip()
-            return json.loads(result_text)
-        except Exception as e:
-            print(f"❌ AI 2차 분석 실패: {e}")
-            # 빈 결과 반환하여 프론트엔드 에러 방지
-            return {"results": []}
 
     # --- 캐시 및 유틸리티 ---
     def _get_cache(self, url: str):
@@ -809,40 +619,3 @@ class AnalysisService:
                 'url': url, 'result': result, 'cached_at': datetime.now()
             })
         except: pass
-
-    def _get_sample_articles(self, keywords: list, target_countries: list = None):
-        """검색 실패 시 테스트용 샘플 데이터"""
-        k = keywords[0] if keywords else "이슈"
-
-        # 타겟 국가에 맞는 샘플 데이터 생성
-        sample_sources = []
-        if target_countries and len(target_countries) > 0:
-            # 타겟 국가별 대표 언론사 매핑
-            country_media = {
-                'US': {'source': 'CNN', 'credibility': 80},
-                'UK': {'source': 'BBC', 'credibility': 85},
-                'CN': {'source': 'Xinhua', 'credibility': 60},
-                'RU': {'source': 'RT', 'credibility': 55},
-                'JP': {'source': 'NHK', 'credibility': 75},
-                'KR': {'source': 'Yonhap', 'credibility': 75},
-                'FR': {'source': 'France 24', 'credibility': 80},
-                'DE': {'source': 'DW', 'credibility': 80},
-            }
-            for country in target_countries[:3]:  # 최대 3개국
-                media = country_media.get(country, {'source': f'{country} News', 'credibility': 70})
-                sample_sources.append({
-                    'title': f'{media["source"]}: {k} coverage',
-                    'snippet': f'{country} perspective on {k}...',
-                    'url': '#',
-                    'source': media['source'],
-                    'country': country,
-                    'credibility': media['credibility']
-                })
-        else:
-            # 기본 샘플 (타겟 국가 없을 때)
-            sample_sources = [
-                {'title': f'Global view on {k}', 'snippet': 'Western media perspective...', 'url': '#', 'source': 'CNN', 'country': 'US', 'credibility': 80},
-                {'title': f'Alternative view on {k}', 'snippet': 'Eastern media perspective...', 'url': '#', 'source': 'Xinhua', 'country': 'CN', 'credibility': 60},
-            ]
-
-        return sample_sources

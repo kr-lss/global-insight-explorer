@@ -1,4 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
+  // --- [UI Elements] ---
   const urlInput = document.getElementById('urlInput');
   const analyzeBtn = document.getElementById('analyzeBtn');
   const factCheckBtn = document.getElementById('factCheckBtn');
@@ -9,7 +10,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const factCheckResultsDiv = document.getElementById('factCheckResults');
   const errorDiv = document.getElementById('error');
 
-  // Human-in-the-loop UI 요소
+  // Human-in-the-loop UI
   const skipAIConfirmationCheckbox = document.getElementById('skipAIConfirmation');
   const aiConfirmationCard = document.getElementById('aiConfirmationCard');
   const confirmSearchBtn = document.getElementById('confirmSearchBtn');
@@ -17,7 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const aiKeywords = document.getElementById('aiKeywords');
   const aiCountries = document.getElementById('aiCountries');
 
-  // 히스토리 UI 요소
+  // History UI
   const inputTab = document.getElementById('inputTab');
   const popularTab = document.getElementById('popularTab');
   const recentTab = document.getElementById('recentTab');
@@ -25,135 +26,101 @@ document.addEventListener('DOMContentLoaded', () => {
   const recentList = document.getElementById('recentList');
   const tabBtns = document.querySelectorAll('.tab-btn');
 
-  // 백엔드 서버 주소 (환경에 따라 자동 설정)
-  const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-    ? 'http://127.0.0.1:8080'
-    : `${window.location.protocol}//${window.location.hostname}${window.location.port ? ':' + window.location.port : ''}`;
+  // --- [Configuration] ---
+  const API_BASE_URL = '';
 
   let currentAnalysis = null;
-  let pendingSearchData = null; // AI 분석 결과를 임시 저장
+  let pendingSearchData = null;
 
-  // 빠른 검색 설정 로드
-  const savedSkipConfirmation = localStorage.getItem('skipAIConfirmation');
-  if (savedSkipConfirmation === 'true') {
-    skipAIConfirmationCheckbox.checked = true;
+  // Load Settings
+  if (skipAIConfirmationCheckbox) {
+    const savedSkip = localStorage.getItem('skipAIConfirmation');
+    if (savedSkip === 'true') skipAIConfirmationCheckbox.checked = true;
+    skipAIConfirmationCheckbox.addEventListener('change', () => {
+      localStorage.setItem('skipAIConfirmation', skipAIConfirmationCheckbox.checked);
+    });
   }
 
-  // 빠른 검색 설정 변경 시 저장
-  skipAIConfirmationCheckbox.addEventListener('change', () => {
-    localStorage.setItem('skipAIConfirmation', skipAIConfirmationCheckbox.checked);
-  });
-
-  // 탭 전환 기능
+  // --- [Tab Switching] ---
   tabBtns.forEach(btn => {
     btn.addEventListener('click', () => {
       const tabName = btn.dataset.tab;
-
-      // 모든 탭 버튼 비활성화
       tabBtns.forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
 
-      // 모든 섹션 숨기기
-      inputTab.classList.add('hidden');
-      popularTab.classList.add('hidden');
-      recentTab.classList.add('hidden');
-      resultsSection.classList.add('hidden');
+      if (inputTab) inputTab.classList.add('hidden');
+      if (popularTab) popularTab.classList.add('hidden');
+      if (recentTab) recentTab.classList.add('hidden');
+      if (resultsSection) resultsSection.classList.add('hidden');
 
-      // 선택된 탭 표시
-      if (tabName === 'input') {
-        inputTab.classList.remove('hidden');
-      } else if (tabName === 'popular') {
-        popularTab.classList.remove('hidden');
-        loadPopularContent();
-      } else if (tabName === 'recent') {
-        recentTab.classList.remove('hidden');
-        loadRecentHistory();
-      }
+      if (tabName === 'input' && inputTab) inputTab.classList.remove('hidden');
+      else if (tabName === 'popular' && popularTab) { popularTab.classList.remove('hidden'); loadPopularContent(); }
+      else if (tabName === 'recent' && recentTab) { recentTab.classList.remove('hidden'); loadRecentHistory(); }
     });
   });
 
-  // URL 파라미터에서 URL 읽기 (공유 링크 지원)
+  // URL Parameter Check
   const urlParams = new URLSearchParams(window.location.search);
   const sharedUrl = urlParams.get('url');
   if (sharedUrl) {
     urlInput.value = decodeURIComponent(sharedUrl);
-
-    // 자동 타입 감지
     if (sharedUrl.includes('youtube.com') || sharedUrl.includes('youtu.be')) {
-      document.querySelector('input[value="youtube"]').checked = true;
-    } else {
-      document.querySelector('input[value="article"]').checked = true;
+      const ytRadio = document.querySelector('input[value="youtube"]');
+      if(ytRadio) ytRadio.checked = true;
     }
   }
 
-  // Enter 키로 분석 시작
-  urlInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') {
-      analyzeBtn.click();
-    }
-  });
+  if(urlInput) {
+    urlInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') analyzeBtn.click();
+    });
+  }
 
-  // 1차 분석: 주장 추출
-  analyzeBtn.addEventListener('click', async () => {
-    const url = urlInput.value.trim();
-    const inputType = document.querySelector('input[name="inputType"]:checked').value;
+  // --- [Step 1: Content Analysis] ---
+  if (analyzeBtn) {
+    analyzeBtn.addEventListener('click', async () => {
+      const url = urlInput.value.trim();
+      const inputTypeEl = document.querySelector('input[name="inputType"]:checked');
+      const inputType = inputTypeEl ? inputTypeEl.value : 'youtube';
 
-    if (!url) {
-      showError('URL을 입력해주세요');
-      return;
-    }
+      if (!url) return showError('URL을 입력해주세요');
 
-    // URL 유효성 검사
-    try {
-      new URL(url);
-    } catch {
-      showError('올바른 URL 형식이 아닙니다');
-      return;
-    }
+      showLoading(true, '콘텐츠를 분석하고 있습니다...');
+      clearError();
+      if (resultsSection) resultsSection.classList.add('hidden');
+      if (factCheckSection) factCheckSection.classList.add('hidden');
+      analyzeBtn.disabled = true;
 
-    showLoading(true, '주장을 분석하고 있습니다...');
-    clearError();
-    resultsSection.classList.add('hidden');
-    factCheckSection.classList.add('hidden');
-    analyzeBtn.disabled = true;
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/analyze`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url, inputType }),
+        });
 
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/analyze`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, inputType }),
-      });
+        if (!response.ok) throw new Error('분석 서버 응답 오류');
+        const data = await response.json();
+        if (!data.success) throw new Error(data.error || '분석 실패');
 
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || '분석 실패');
+        currentAnalysis = data.analysis;
+        displayAnalysisResults(currentAnalysis);
+        if (resultsSection) resultsSection.classList.remove('hidden');
+        if (factCheckSection) factCheckSection.classList.remove('hidden');
+
+        const newUrl = new URL(window.location);
+        newUrl.searchParams.set('url', url);
+        window.history.pushState({}, '', newUrl);
+
+      } catch (err) {
+        showError(err.message);
+      } finally {
+        showLoading(false);
+        analyzeBtn.disabled = false;
       }
+    });
+  }
 
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error || '분석 실패');
-      }
-
-      currentAnalysis = data.analysis;
-      displayAnalysisResults(currentAnalysis);
-      resultsSection.classList.remove('hidden');
-      factCheckSection.classList.remove('hidden');
-
-      // URL 업데이트 (공유 가능하도록)
-      const newUrl = new URL(window.location);
-      newUrl.searchParams.set('url', url);
-      window.history.pushState({}, '', newUrl);
-
-    } catch (err) {
-      showError(err.message);
-    } finally {
-      showLoading(false);
-      analyzeBtn.disabled = false;
-    }
-  });
-
-  // AI 쿼리 최적화 함수 (5대 요소 추출)
+  // --- [AI Query Optimization] ---
   async function optimizeQuery(userInput, context) {
     const response = await fetch(`${API_BASE_URL}/api/optimize-query`, {
       method: 'POST',
@@ -167,94 +134,60 @@ document.addEventListener('DOMContentLoaded', () => {
       }),
     });
 
-    if (!response.ok) {
-      throw new Error('쿼리 최적화 실패');
-    }
+    if (!response.ok) throw new Error('쿼리 최적화 서버 오류');
 
     const data = await response.json();
-
-    if (!data.success) {
-      throw new Error(data.error || '쿼리 최적화 실패');
+    const resultData = data.success ? data.data : (data.data || data);
+    
+    let countries = resultData.target_countries || [];
+    if (countries.length === 0) {
+      console.warn("⚠️ 국가 정보 없음. 기본값(US, KR) 사용");
+      countries = [{code: 'US', reason: 'Default'}, {code: 'KR', reason: 'Default'}];
     }
 
-    // 백엔드 응답 구조: {success: true, data: {gdelt_params: {...}, target_countries: [...], topic_en: ...}}
-    const result = data.data || {};
-
-    // [수정] 백엔드가 반환하는 실제 필드명과 일치시킴
     return {
-      issue_type: result.issue_type || 'multi_country',
-      topic_en: result.topic_en || userInput,
-      target_countries: result.target_countries || [],
-      gdelt_params: result.gdelt_params || null,
-      // 하위 호환성을 위한 추가 필드
-      search_keywords_en: result.search_keywords_en || [userInput],
-      interpreted_intent: result.topic_en || userInput
+      issue_type: resultData.issue_type || 'multi_country',
+      topic_en: resultData.topic_en || userInput, 
+      target_countries: countries,
+      gdelt_params: resultData.gdelt_params || { keywords: [userInput] },
+      interpreted_intent: resultData.interpreted_intent || userInput,
+      search_keywords_en: resultData.gdelt_params ? resultData.gdelt_params.keywords : [userInput],
+      target_country_codes: countries.map(c => c.code)
     };
   }
 
-  // ============================================================
-  // 2차 분석: 다양한 관점 찾기 (Human-in-the-loop 워크플로우)
-  // ============================================================
+  // --- [Step 2: Global Perspective Search] ---
+  if (factCheckBtn) {
+    factCheckBtn.addEventListener('click', async () => {
+      const customClaimInput = document.getElementById('customClaimInput');
+      let userInput = customClaimInput ? customClaimInput.value.trim() : '';
 
-  // Step 1: "다양한 출처 찾기" 버튼 클릭
-  factCheckBtn.addEventListener('click', async () => {
-    const customClaimInput = document.getElementById('customClaimInput');
-    const userInput = customClaimInput ? customClaimInput.value.trim() : '';
-
-    // 0. 기본 선택된 주장들 수집 (claims_data 형식으로 변환)
-    const selectedClaimsData = Array.from(
-      document.querySelectorAll('#keyClaims input[type="checkbox"]:checked')
-    ).map(input => {
-      try {
-        return {
-          claim_kr: input.value,
-          search_keywords_en: JSON.parse(input.dataset.keywords || '[]'),
-          target_country_codes: JSON.parse(input.dataset.countries || '[]')
-        };
-      } catch (e) {
-        // 데이터 파싱 실패 시 기본값
-        return {
-          claim_kr: input.value,
-          search_keywords_en: [],
-          target_country_codes: []
-        };
+      if (!userInput) {
+        const checkedBox = document.querySelector('#keyClaims input[type="checkbox"]:checked');
+        if (checkedBox) {
+          userInput = checkedBox.value;
+          console.log("✅ 체크박스 선택됨, AI 분석 대상으로 설정:", userInput);
+        }
       }
+
+      if (!userInput) {
+        return showError('위의 주장을 선택하거나, 직접 주장을 입력해주세요');
+      }
+
+      clearError();
+      if (aiConfirmationCard) aiConfirmationCard.classList.add('hidden');
+
+      const skipConfirmation = skipAIConfirmationCheckbox ? skipAIConfirmationCheckbox.checked : false;
+      await showAIInterpretation(userInput, null, skipConfirmation);
     });
+  }
 
-    // 사용자 입력도 없고, 선택된 주장도 없으면 에러
-    if (!userInput && selectedClaimsData.length === 0) {
-      showError('위의 주장을 선택하거나, 직접 주장을 입력해주세요');
-      return;
-    }
-
-    clearError();
-    aiConfirmationCard.classList.add('hidden'); // 이전 확인 카드 숨김
-
-    // Case 1: 사용자 직접 입력이 없는 경우 (체크박스만 선택) -> AI 최적화 불필요, 바로 검색
-    if (!userInput) {
-      await executeFullSearch(selectedClaimsData);
-      return;
-    }
-
-    // Case 2: 사용자 입력이 있는 경우 -> 항상 AI 최적화 수행
-    // "빠른 검색"은 확인 UI만 건너뛰고, AI 최적화는 항상 수행
-    const skipConfirmation = skipAIConfirmationCheckbox.checked;
-    console.log(`🔍 빠른 검색 체크박스 상태: ${skipConfirmation ? '체크됨 (즉시 검색)' : '체크 안됨 (확인 카드 표시)'}`);
-    await showAIInterpretation(userInput, selectedClaimsData, skipConfirmation);
-  });
-
-  // Step 2: AI 분석 결과를 확인 카드에 표시 (또는 빠른 검색 시 바로 실행)
-  async function showAIInterpretation(userInput, selectedClaimsData, skipConfirmation = false) {
+  async function showAIInterpretation(userInput, unused, skipConfirmation = false) {
     factCheckBtn.disabled = true;
 
     try {
-      // 로딩 메시지 분기
-      const loadingMsg = skipConfirmation
-        ? '🚀 AI 최적화 및 글로벌 검색을 빠르게 수행 중...'
-        : '💭 AI가 질문을 분석하고 있습니다...';
-      showLoading(true, loadingMsg);
+      showLoading(true, skipConfirmation ? '🚀 글로벌 뉴스 검색 중...' : '💭 AI가 질문을 분석하고 있습니다...');
 
-      // 현재 분석 중인 영상의 맥락 정보
       const context = {
         title_kr: currentAnalysis?.title_kr || '',
         key_claims: currentAnalysis?.key_claims || []
@@ -262,782 +195,223 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const optimizedData = await optimizeQuery(userInput, context);
 
-      // [디버깅] 백엔드 응답 확인
-      console.log("📊 optimizeQuery 응답:", optimizedData);
-
-      // [핵심 수정] 빠른 검색 모드: AI 최적화 수행 후 즉시 검색 실행
       if (skipConfirmation) {
-        // 새로운 방식: optimizedData를 search_params로 전달
-        console.log("🚀 executeFullSearchNew 호출 (빠른 검색)");
-        showLoading(true, '🔍 전 세계 뉴스를 검색하고 있습니다...');
+        showLoading(true, '🔍 전 세계 뉴스를 국가별로 검색하고 있습니다...');
         await executeFullSearchNew(optimizedData);
         return;
       }
 
-      // 일반 모드: 확인 카드 표시
-      // 전역 변수에 저장 (확인 버튼 클릭 시 사용)
-      pendingSearchData = {
-        selectedClaimsData,
-        userInput,
-        optimizedData
-      };
+      pendingSearchData = { optimizedData };
 
-      // UI에 AI 분석 결과 표시
-      aiInterpretedIntent.textContent = optimizedData.interpreted_intent || userInput;
-
-      // 키워드 표시
-      aiKeywords.innerHTML = '';
-      const keywords = optimizedData.gdelt_params?.keywords || optimizedData.search_keywords_en || [];
-      if (keywords && keywords.length > 0) {
-        keywords.forEach(keyword => {
+      if (aiInterpretedIntent) aiInterpretedIntent.textContent = optimizedData.interpreted_intent || userInput;
+      
+      if (aiKeywords) {
+        aiKeywords.innerHTML = '';
+        (optimizedData.search_keywords_en || []).forEach(k => {
           const tag = document.createElement('span');
           tag.className = 'keyword-tag';
-          tag.textContent = keyword;
+          tag.textContent = k;
           aiKeywords.appendChild(tag);
         });
-      } else {
-        aiKeywords.innerHTML = '<span class="interpretation-text">키워드 없음</span>';
       }
 
-      // 국가 표시
-      aiCountries.innerHTML = '';
-      if (optimizedData.target_countries && optimizedData.target_countries.length > 0) {
-        optimizedData.target_countries.forEach(country => {
-          const code = country.code || country;
-          const role = country.role || '';
+      if (aiCountries) {
+        aiCountries.innerHTML = '';
+        (optimizedData.target_country_codes || []).forEach(c => {
+          const code = typeof c === 'object' ? c.code : c;
           const tag = document.createElement('span');
           tag.className = 'country-tag';
-          tag.innerHTML = `${getCountryFlag(code)} ${code}${role ? ` (${role})` : ''}`;
+          tag.innerHTML = `${getCountryFlag(code)} ${code}`;
           aiCountries.appendChild(tag);
         });
-      } else {
-        aiCountries.innerHTML = '<span class="interpretation-text">전체 국가</span>';
       }
 
-      // 확인 카드 표시
-      aiConfirmationCard.classList.remove('hidden');
-
-      // 카드로 스크롤
-      setTimeout(() => {
-        aiConfirmationCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }, 100);
+      if (aiConfirmationCard) {
+        aiConfirmationCard.classList.remove('hidden');
+        setTimeout(() => aiConfirmationCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100);
+      }
 
     } catch (error) {
-      console.warn('AI 분석 실패, 원본 입력으로 검색합니다:', error);
-
-      // Graceful degradation: AI 분석 실패 시 원본 입력으로 바로 검색
-      const claimsData = [...selectedClaimsData];
-      claimsData.push({
-        claim_kr: userInput,
-        gdelt_params: null,  // Fallback: 5대 요소 없음
-        search_keywords_en: [userInput],
-        target_country_codes: []
+      console.warn('AI 분석 실패, 기본 검색으로 전환:', error);
+      await executeFullSearchNew({
+        topic_en: userInput,
+        target_countries: [{code:'US'}, {code:'KR'}],
+        gdelt_params: { keywords: [userInput] }
       });
-
-      await executeFullSearch(claimsData);
-
     } finally {
       showLoading(false);
       factCheckBtn.disabled = false;
     }
   }
 
-  // Step 3: "이대로 검색" 버튼 클릭 -> 실제 검색 실행
-  confirmSearchBtn.addEventListener('click', async () => {
-    if (!pendingSearchData) {
-      showError('검색 데이터가 없습니다. 다시 시도해주세요.');
-      return;
-    }
-
-    const { optimizedData } = pendingSearchData;
-
-    // 확인 카드 숨김
-    aiConfirmationCard.classList.add('hidden');
-
-    // [디버깅] 확인 버튼 클릭 시 데이터 확인
-    console.log("✅ 확인 버튼 클릭 - optimizedData:", optimizedData);
-
-    // 새로운 방식: optimizedData를 search_params로 전달
-    await executeFullSearchNew(optimizedData);
-  });
-
-  // [Legacy] 실제 검색을 수행하는 통합 함수 (기존 claims_data 방식)
-  async function executeFullSearch(claimsData) {
-    factCheckBtn.disabled = true;
-    confirmSearchBtn.disabled = true;
-
-    try {
-      showLoading(true, '🔍 전 세계 뉴스를 검색하고 있습니다...');
-
-      const url = urlInput.value.trim();
-      const inputType = document.querySelector('input[name="inputType"]:checked').value;
-
-      const response = await fetch(`${API_BASE_URL}/api/find-sources`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          url,
-          inputType,
-          claims_data: claimsData
-        }),
-      });
-
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || '기사 검색 실패');
-      }
-
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error || '기사 검색 실패');
-      }
-
-      // [핵심 수정] 백엔드가 국가별 포맷으로 반환하는 경우 감지
-      // 새로운 포맷: { status, issue_type, topic, data: { "KR": {...}, "US": {...} } }
-      // 기존 포맷: { results: [...] }
-      if (data.result && data.result.data && typeof data.result.data === 'object') {
-        // 새로운 국가별 포맷
-        console.log("✅ 국가별 포맷 감지, displaySources 호출");
-        displaySourcesNew(data.result);
-      } else {
-        // 기존 입장별 포맷
-        console.log("✅ 기존 포맷 감지, displaySourcesResults 호출");
-        displaySourcesResults(data.result, data.articles);
-      }
-
-    } catch (err) {
-      showError(err.message);
-    } finally {
-      showLoading(false);
-      factCheckBtn.disabled = false;
-      confirmSearchBtn.disabled = false;
-    }
+  if (confirmSearchBtn) {
+    confirmSearchBtn.addEventListener('click', async () => {
+      if (!pendingSearchData) return;
+      if (aiConfirmationCard) aiConfirmationCard.classList.add('hidden');
+      await executeFullSearchNew(pendingSearchData.optimizedData);
+    });
   }
 
-  // [New] 새로운 국가별 관점 검색 함수 (search_params 방식)
   async function executeFullSearchNew(searchParams) {
-    console.log("🔍 executeFullSearchNew 시작, searchParams:", searchParams);
-
     factCheckBtn.disabled = true;
-    confirmSearchBtn.disabled = true;
+    if (confirmSearchBtn) confirmSearchBtn.disabled = true;
 
     try {
       showLoading(true, '🔍 전 세계 뉴스를 국가별로 검색하고 있습니다...');
 
-      const requestBody = { search_params: searchParams };
-      console.log("📤 API 요청 데이터:", requestBody);
-
       const response = await fetch(`${API_BASE_URL}/api/find-sources`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({ search_params: searchParams }),
       });
 
-      if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || '기사 검색 실패');
-      }
-
+      if (!response.ok) throw new Error('검색 요청 실패');
       const data = await response.json();
+      if (!data.success) throw new Error(data.error || '검색 실패');
 
-      if (!data.success) {
-        throw new Error(data.error || '기사 검색 실패');
-      }
-
-      // 새로운 국가별 포맷으로 렌더링
-      console.log("✅ 국가별 관점 데이터 수신:", data.result);
       displaySourcesNew(data.result);
 
     } catch (err) {
-      console.error("❌ 검색 실패:", err);
+      console.error(err);
       showError(err.message);
     } finally {
       showLoading(false);
       factCheckBtn.disabled = false;
-      confirmSearchBtn.disabled = false;
+      if (confirmSearchBtn) confirmSearchBtn.disabled = false;
     }
   }
 
-  // 분석 결과 표시
   function displayAnalysisResults(analysis) {
     keyClaimsDiv.innerHTML = '';
-
-    // 제목
     const title = document.createElement('h3');
     title.textContent = '주요 주장';
     title.className = 'section-title';
     keyClaimsDiv.appendChild(title);
 
-    // 주장 체크박스
-    if (analysis.key_claims && analysis.key_claims.length > 0) {
-      const claimsContainer = document.createElement('div');
-      claimsContainer.className = 'claims-list';
-
-      analysis.key_claims.forEach((claim, index) => {
-        const claimEl = document.createElement('div');
-        claimEl.className = 'claim-item';
-
-        // claim이 객체인 경우와 문자열인 경우 모두 처리
+    if (analysis.key_claims) {
+      const list = document.createElement('div');
+      list.className = 'claims-list';
+      analysis.key_claims.forEach((claim, idx) => {
         const claimText = typeof claim === 'string' ? claim : claim.claim_kr;
-        const searchKeywords = typeof claim === 'object' ? (claim.search_keywords_en || []) : [];
-        const targetCountries = typeof claim === 'object' ? (claim.target_country_codes || []) : [];
-
-        claimEl.innerHTML = `
-          <input type="checkbox"
-                 id="claim-${index}"
-                 value="${escapeHtml(claimText)}"
-                 data-keywords='${JSON.stringify(searchKeywords)}'
-                 data-countries='${JSON.stringify(targetCountries)}'
-                 class="claim-checkbox">
-          <label for="claim-${index}" class="claim-label">${escapeHtml(claimText)}</label>
+        const item = document.createElement('div');
+        item.className = 'claim-item';
+        
+        item.innerHTML = `
+          <input type="checkbox" id="claim-${idx}" value="${escapeHtml(claimText)}" class="claim-checkbox">
+          <label for="claim-${idx}" class="claim-label">${escapeHtml(claimText)}</label>
         `;
-        claimsContainer.appendChild(claimEl);
+        list.appendChild(item);
+
+        const checkbox = item.querySelector('input');
+        checkbox.addEventListener('change', function() {
+          if(this.checked) {
+            document.querySelectorAll('.claim-checkbox').forEach(cb => {
+              if(cb !== this) cb.checked = false;
+            });
+          }
+        });
       });
-
-      keyClaimsDiv.appendChild(claimsContainer);
-    }
-
-    // 요약
-    if (analysis.summary_kr) {
-      const summaryDiv = document.createElement('div');
-      summaryDiv.className = 'info-section';
-      summaryDiv.innerHTML = `
-        <h4 class="info-title">요약</h4>
-        <p class="info-text">${escapeHtml(analysis.summary_kr)}</p>
-      `;
-      keyClaimsDiv.appendChild(summaryDiv);
-    }
-
-    // 관련 국가
-    if (analysis.related_countries && analysis.related_countries.length > 0) {
-      const countriesDiv = document.createElement('div');
-      countriesDiv.className = 'info-section';
-      countriesDiv.innerHTML = `
-        <h4 class="info-title">관련 국가</h4>
-        <div class="tags">
-          ${analysis.related_countries.map(c => `<span class="tag">${escapeHtml(c)}</span>`).join('')}
-        </div>
-      `;
-      keyClaimsDiv.appendChild(countriesDiv);
-    }
-
-    // 주제
-    if (analysis.topics && analysis.topics.length > 0) {
-      const topicsDiv = document.createElement('div');
-      topicsDiv.className = 'info-section';
-      topicsDiv.innerHTML = `
-        <h4 class="info-title">주제</h4>
-        <div class="tags">
-          ${analysis.topics.map(t => `<span class="tag tag-topic">${escapeHtml(t)}</span>`).join('')}
-        </div>
-      `;
-      keyClaimsDiv.appendChild(topicsDiv);
+      keyClaimsDiv.appendChild(list);
     }
   }
 
-  // 관련 기사 및 신뢰도 표시 (입장별 그룹화)
-  function displaySourcesResults(analysis, articles) {
-    // [디버깅] 함수 진입점과 데이터 구조 확인
-    console.log("📥 displaySourcesResults 진입");
-    console.log("📥 analysis:", analysis);
-    console.log("📥 analysis.results:", analysis.results);
-    console.log("📥 articles:", articles);
-
+  function displaySourcesNew(data) {
     factCheckResultsDiv.innerHTML = '';
 
-    const results = analysis.results || [];
-
-    if (results.length === 0) {
-      console.error("❌ results 배열이 비어있습니다");
-      factCheckResultsDiv.innerHTML = '<p class="no-results">다양한 관점의 출처를 찾을 수 없습니다.</p>';
-      return;
-    }
-
-    console.log(`✅ ${results.length}개 result 처리 시작`);
-
-    results.forEach((result, idx) => {
-      console.log(`🔍 Result #${idx}:`, result);
-      console.log(`🔍 Result #${idx} articles:`, result.articles);
-
-      const resultEl = document.createElement('div');
-      resultEl.className = 'source-result';
-
-      // 주장
-      const claimEl = document.createElement('div');
-      claimEl.className = 'claim-text';
-      claimEl.textContent = `📌 "${result.claim}"`;
-      resultEl.appendChild(claimEl);
-
-      // ============================================================
-      // [수정] 백엔드 실제 구조 대응: result.articles 직접 사용
-      // ============================================================
-      const resultArticles = result.articles || [];
-      console.log(`📰 Result #${idx}: ${resultArticles.length}개 기사`);
-
-      if (resultArticles.length > 0) {
-        // 기사 개수 요약
-        const summaryEl = document.createElement('div');
-        summaryEl.className = 'stance-summary';
-        const keywords = (result.searched_keywords || []).slice(0, 3).join(', ') || '없음';
-        summaryEl.innerHTML = `
-          <h5 class="section-subtitle">📰 관련 기사 (총 ${resultArticles.length}개)</h5>
-          <div class="stance-stats">
-            <span class="stance-stat neutral">🔍 검색 키워드: ${keywords}</span>
-          </div>
-        `;
-        resultEl.appendChild(summaryEl);
-
-        // 기사 목록 렌더링
-        const articlesContainer = document.createElement('div');
-        articlesContainer.className = 'related-articles';
-
-        resultArticles.forEach(article => {
-          const articleEl = document.createElement('div');
-          articleEl.className = 'article-card';
-
-          // 신뢰도 점수에 따른 색상
-          const credibility = article.credibility || 50;
-          let credibilityClass = 'medium';
-          if (credibility >= 80) credibilityClass = 'high';
-          else if (credibility < 60) credibilityClass = 'low';
-
-          articleEl.innerHTML = `
-            <div class="article-header">
-              <div class="article-source">
-                <span class="source-name">${escapeHtml(article.source || 'Unknown')}</span>
-                <span class="country-flag">${getCountryFlag(article.country)}</span>
-              </div>
-              <div class="article-badges">
-                <div class="credibility-badge ${credibilityClass}">
-                  <span class="credibility-score">${credibility}</span>
-                  <span class="credibility-label">신뢰도</span>
-                </div>
-              </div>
-            </div>
-            <div class="article-title">
-              <a href="${escapeHtml(article.url)}" target="_blank" rel="noopener noreferrer">
-                ${escapeHtml(article.title || '제목 없음')}
-              </a>
-            </div>
-            <div class="article-meta">
-              <span class="bias-tag">${escapeHtml(article.media_type || 'N/A')}</span>
-              <span class="date">${escapeHtml(article.date || 'N/A')}</span>
-            </div>
-            <div class="article-snippet">${escapeHtml(article.snippet || '')}</div>
-          `;
-
-          articlesContainer.appendChild(articleEl);
-        });
-
-        resultEl.appendChild(articlesContainer);
-      } else {
-        // 기사가 없는 경우
-        const noArticlesEl = document.createElement('p');
-        noArticlesEl.className = 'no-results';
-        noArticlesEl.textContent = '관련 기사를 찾지 못했습니다.';
-        resultEl.appendChild(noArticlesEl);
-      }
-
-      factCheckResultsDiv.appendChild(resultEl);
-    });
-
-    // 신뢰도 안내
-    const guideEl = document.createElement('div');
-    guideEl.className = 'credibility-guide';
-    guideEl.innerHTML = `
-      <h5 class="guide-title">출처 정보 안내</h5>
-      <div class="guide-content">
-        <div class="guide-item">
-          <span class="guide-badge high">80+</span>
-          <span>주요 국제 언론사</span>
-        </div>
-        <div class="guide-item">
-          <span class="guide-badge medium">60-79</span>
-          <span>일반 언론사</span>
-        </div>
-        <div class="guide-item">
-          <span class="guide-badge low">&lt;60</span>
-          <span>기타 출처</span>
-        </div>
-      </div>
-      <p class="guide-note">
-        점수는 단순 참고용입니다. 각 출처의 내용을 직접 확인하고 판단하세요.
-      </p>
-    `;
-    factCheckResultsDiv.appendChild(guideEl);
-  }
-
-  // 헬퍼 함수: 입장별 섹션 생성 (Legacy 코드 - 향후 제거 예정)
-  function createStanceSection(stanceType, title, articles, commonArguments) {
-      const container = document.createElement('div');
-      container.className = `stance-section stance-${stanceType}`;
-
-      // 섹션 헤더
-      const header = document.createElement('div');
-      header.className = 'stance-header';
-      header.innerHTML = `
-        <h5 class="stance-title">${title} (${articles.length}개)</h5>
-      `;
-      container.appendChild(header);
-
-      // 공통 논거 (있는 경우)
-      if (commonArguments && commonArguments.length > 0) {
-        const argsEl = document.createElement('div');
-        argsEl.className = 'common-arguments';
-        argsEl.innerHTML = `
-          <strong>공통 논거:</strong>
-          <ul>
-            ${commonArguments.map(arg => `<li>${escapeHtml(arg)}</li>`).join('')}
-          </ul>
-        `;
-        container.appendChild(argsEl);
-      }
-
-      // 기사 목록
-      const articlesContainer = document.createElement('div');
-      articlesContainer.className = 'related-articles';
-
-      articles.forEach(article => {
-        const articleEl = document.createElement('div');
-        articleEl.className = 'article-card';
-
-        // 신뢰도 점수에 따른 색상
-        const credibility = article.credibility || 50;
-        let credibilityClass = 'medium';
-        if (credibility >= 80) credibilityClass = 'high';
-        else if (credibility < 60) credibilityClass = 'low';
-
-        // 분석 정보
-        const analysis = article.analysis || {};
-        const confidence = analysis.confidence ? (analysis.confidence * 100).toFixed(0) : 'N/A';
-        const keyEvidence = analysis.key_evidence || [];
-        const framing = analysis.framing || '';
-
-        articleEl.innerHTML = `
-          <div class="article-header">
-            <div class="article-source">
-              <span class="source-name">${escapeHtml(article.source)}</span>
-              <span class="country-flag">${getCountryFlag(article.country)}</span>
-            </div>
-            <div class="article-badges">
-              <div class="credibility-badge ${credibilityClass}">
-                <span class="credibility-score">${credibility}</span>
-                <span class="credibility-label">신뢰도</span>
-              </div>
-              <div class="confidence-badge">
-                <span class="confidence-score">${confidence}%</span>
-                <span class="confidence-label">확신도</span>
-              </div>
-            </div>
-          </div>
-          <div class="article-title">
-            <a href="${escapeHtml(article.url)}" target="_blank" rel="noopener noreferrer">
-              ${escapeHtml(article.title)}
-            </a>
-          </div>
-          <div class="article-meta">
-            <span class="bias-tag">${escapeHtml(article.bias || 'N/A')}</span>
-            <span class="date">${escapeHtml(article.published_date || 'N/A')}</span>
-          </div>
-          <div class="article-snippet">${escapeHtml(article.snippet || '')}</div>
-          ${keyEvidence.length > 0 ? `
-            <div class="key-evidence">
-              <strong>핵심 근거:</strong>
-              <ul>
-                ${keyEvidence.map(ev => `<li>${escapeHtml(ev)}</li>`).join('')}
-              </ul>
-            </div>
-          ` : ''}
-          ${framing ? `
-            <div class="framing">
-              <strong>프레임:</strong> ${escapeHtml(framing)}
-            </div>
-          ` : ''}
-        `;
-
-        articlesContainer.appendChild(articleEl);
-      });
-
-      container.appendChild(articlesContainer);
-      return container;
-    }
-
-    // 신뢰도 안내
-    const guideEl = document.createElement('div');
-    guideEl.className = 'credibility-guide';
-    guideEl.innerHTML = `
-      <h5 class="guide-title">출처 정보 안내</h5>
-      <div class="guide-content">
-        <div class="guide-item">
-          <span class="guide-badge high">80+</span>
-          <span>주요 국제 언론사</span>
-        </div>
-        <div class="guide-item">
-          <span class="guide-badge medium">60-79</span>
-          <span>일반 언론사</span>
-        </div>
-        <div class="guide-item">
-          <span class="guide-badge low">&lt;60</span>
-          <span>기타 출처</span>
-        </div>
-      </div>
-      <p class="guide-note">
-        점수는 단순 참고용입니다. 각 출처의 내용을 직접 확인하고 판단하세요.
-      </p>
-    `;
-    factCheckResultsDiv.appendChild(guideEl);
-  }
-
-  // Helper functions
-  function showLoading(isLoading, message = '분석 중...') {
-    if (isLoading) {
-      const loadingText = loadingDiv.querySelector('.loading-text');
-      if (loadingText) {
-        loadingText.textContent = message;
-      }
-    }
-    loadingDiv.classList.toggle('hidden', !isLoading);
-  }
-
-  function showError(message) {
-    errorDiv.textContent = '⚠️ ' + message;
-    errorDiv.classList.remove('hidden');
-    setTimeout(() => {
-      errorDiv.classList.add('hidden');
-    }, 5000);
-  }
-
-  function clearError() {
-    errorDiv.classList.add('hidden');
-  }
-
-  function escapeHtml(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
-
-  function getCountryFlag(countryCode) {
-    const flags = {
-      'KR': '🇰🇷',
-      'US': '🇺🇸',
-      'UK': '🇬🇧',
-      'JP': '🇯🇵',
-      'CN': '🇨🇳',
-      'DE': '🇩🇪',
-      'FR': '🇫🇷',
-      'QA': '🇶🇦',
-      'RU': '🇷🇺',
-      'IN': '🇮🇳',
-      'BR': '🇧🇷',
-      'CA': '🇨🇦',
-      'AU': '🇦🇺',
-      'IT': '🇮🇹',
-      'ES': '🇪🇸',
-    };
-    return flags[countryCode] || '🌐';
-  }
-
-  /**
-   * 국가 코드를 국기 이모지로 변환하는 헬퍼 함수
-   */
-  function getFlagEmoji(countryCode) {
-    if (!countryCode || countryCode === 'Unknown') return '🌍';
-    // ISO 코드를 이모지로 변환하는 매직 로직
-    const codePoints = countryCode
-      .toUpperCase()
-      .split('')
-      .map(char => 127397 + char.charCodeAt());
-    return String.fromCodePoint(...codePoints);
-  }
-
-  /**
-   * [Phase 2] 백엔드의 국가별 데이터(Map)를 받아 리스트로 렌더링
-   */
-  function displaySourcesNew(data) {
-    // [디버깅] 함수 진입점 확인
-    console.log("📥 displaySourcesNew 진입, data:", data);
-    console.log("📥 data.data:", data?.data);
-    console.log("📥 data.data keys:", data?.data ? Object.keys(data.data) : "없음");
-
-    factCheckResultsDiv.innerHTML = ''; // 기존 내용 초기화
-
-    // 1. 데이터 유효성 검사 (안전장치)
     if (!data || !data.data) {
-      console.error("❌ 잘못된 데이터 형식:", data);
-      factCheckResultsDiv.innerHTML = '<div class="no-results">데이터를 불러오는 데 실패했습니다. (포맷 불일치)</div>';
+      factCheckResultsDiv.innerHTML = '<div class="no-results">데이터 형식 오류</div>';
       return;
     }
 
     const countryKeys = Object.keys(data.data);
     if (countryKeys.length === 0) {
-      console.error("❌ data.data가 빈 객체입니다");
-      factCheckResultsDiv.innerHTML = '<div class="no-results">관련된 국가별 보도를 찾지 못했습니다.</div>';
+      factCheckResultsDiv.innerHTML = '<div class="no-results">관련 기사를 찾지 못했습니다. (0건)</div>';
       return;
     }
 
-    console.log(`✅ ${countryKeys.length}개 국가 데이터 렌더링 시작:`, countryKeys);
-
-    // 2. 국가별 섹션 생성 및 렌더링
     countryKeys.forEach(countryCode => {
       const group = data.data[countryCode];
       const articles = group.articles || [];
       const role = group.role || '관련국';
 
-      // [디버깅] 각 국가 그룹 확인
-      console.log(`🔍 ${countryCode} 그룹:`, group);
-      console.log(`🔍 ${countryCode} articles 개수:`, articles.length);
-      console.log(`🔍 ${countryCode} role:`, role);
+      if (articles.length === 0) return;
 
-      // 기사가 없는 국가는 표시하지 않거나 안내 메시지 표시
-      if (articles.length === 0) {
-        console.log(`⚠️ ${countryCode}: 기사 없음, 건너뜀`);
-        return;
-      }
-
-      console.log(`📰 ${countryCode}: ${articles.length}개 기사 렌더링`);
-
-      // 2-1. 국가 헤더 생성
       const section = document.createElement('div');
       section.className = 'country-section';
-      section.style.marginBottom = '24px'; // 섹션 간 간격
-
-      // 국가 코드에 따른 국기 이모지
-      const flag = getFlagEmoji(countryCode);
+      section.style.marginBottom = '24px';
 
       section.innerHTML = `
         <h3 class="country-header" style="border-bottom: 2px solid #eee; padding-bottom: 8px; margin-bottom: 12px;">
-          <span style="font-size: 1.2em; margin-right: 8px;">${flag}</span>
+          <span style="font-size: 1.2em; margin-right: 8px;">${getFlagEmoji(countryCode)}</span>
           ${countryCode} <span style="font-size: 0.8em; color: #666; font-weight: normal;">(${role})</span>
-          <span style="float: right; font-size: 0.8em; color: #888;">${articles.length}건</span>
+          <span style="float: right; font-size: 0.8em; color: #888;">총 ${articles.length}건</span>
         </h3>
       `;
 
-      // 2-2. 기사 리스트 생성 (Compact View)
       const ul = document.createElement('ul');
       ul.className = 'article-list';
       ul.style.listStyle = 'none';
       ul.style.padding = '0';
 
-      articles.forEach(article => {
-        const li = document.createElement('li');
-        li.className = 'article-item';
-        li.style.marginBottom = '12px';
-        li.style.padding = '12px';
-        li.style.backgroundColor = '#f8f9fa';
-        li.style.borderRadius = '8px';
-
-        li.innerHTML = `
-          <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-            <span style="font-size: 12px; color: #5f6368; font-weight: bold;">
-              ${escapeHtml(article.source || 'Unknown Source')}
-            </span>
-            <span style="font-size: 11px; color: #888;">${escapeHtml(article.date || '')}</span>
-          </div>
-          <a href="${escapeHtml(article.url)}" target="_blank" style="text-decoration: none; color: #1a0dab; font-weight: 500; font-size: 15px; display: block; line-height: 1.4;">
-            ${escapeHtml(article.title || '제목 없음')}
-          </a>
-        `;
-        ul.appendChild(li);
+      articles.forEach(art => {
+        ul.appendChild(createArticleItem(art));
       });
-
+      
       section.appendChild(ul);
       factCheckResultsDiv.appendChild(section);
     });
-
-    console.log(`✅ 모든 국가 섹션 렌더링 완료`);
   }
 
-  // 인기 콘텐츠 로드
-  async function loadPopularContent() {
-    try {
-      popularList.innerHTML = '<div class="loading-small">로딩 중...</div>';
+  function createArticleItem(article) {
+    const li = document.createElement('li');
+    li.style.marginBottom = '10px';
+    li.style.padding = '12px';
+    li.style.backgroundColor = '#f9f9f9';
+    li.style.borderRadius = '8px';
+    
+    // [수정됨] 한글 제목(title_kr)이 있으면 우선 표시
+    const titleToDisplay = article.title_kr || article.title || '제목 없음';
+    const scoreBadge = article.relevance_score 
+      ? `<span style="font-size:11px; color:#28a745; font-weight:bold;">(연관성: ${(article.relevance_score * 100).toFixed(0)}%)</span>` 
+      : '';
 
-      const response = await fetch(`${API_BASE_URL}/api/history/popular?limit=10&days=7`);
-      const data = await response.json();
+    li.innerHTML = `
+      <div style="font-size: 12px; color: #666; margin-bottom: 4px; display: flex; justify-content: space-between;">
+        <strong>${escapeHtml(article.source)}</strong>
+        <span>${escapeHtml(article.date || '')} ${scoreBadge}</span>
+      </div>
+      <a href="${escapeHtml(article.url)}" target="_blank" title="${escapeHtml(article.title)}" style="text-decoration: none; color: #1a0dab; font-weight: 500; font-size: 15px; display: block; line-height: 1.4;">
+        ${escapeHtml(titleToDisplay)}
+      </a>
+    `;
+    return li;
+  }
 
-      if (!data.success || data.count === 0) {
-        popularList.innerHTML = '<p class="no-results">아직 인기 콘텐츠가 없습니다</p>';
-        return;
-      }
-
-      displayHistoryList(popularList, data.data);
-
-    } catch (err) {
-      console.error('인기 콘텐츠 로드 실패:', err);
-      popularList.innerHTML = `<p class="error-text">⚠️ 인기 콘텐츠를 불러올 수 없습니다<br><small>${err.message || '네트워크 오류'}</small></p>`;
+  // --- [Utilities] ---
+  function showLoading(show, msg) {
+    if(loadingDiv) {
+      loadingDiv.classList.toggle('hidden', !show);
+      if(show && msg) loadingDiv.querySelector('.loading-text').textContent = msg;
     }
   }
-
-  // 최근 분석 로드
-  async function loadRecentHistory() {
-    try {
-      recentList.innerHTML = '<div class="loading-small">로딩 중...</div>';
-
-      const response = await fetch(`${API_BASE_URL}/api/history/recent?limit=20`);
-      const data = await response.json();
-
-      if (!data.success || data.count === 0) {
-        recentList.innerHTML = '<p class="no-results">아직 분석 기록이 없습니다</p>';
-        return;
-      }
-
-      displayHistoryList(recentList, data.data);
-
-    } catch (err) {
-      console.error('최근 분석 로드 실패:', err);
-      recentList.innerHTML = `<p class="error-text">⚠️ 최근 분석을 불러올 수 없습니다<br><small>${err.message || '네트워크 오류'}</small></p>`;
+  function showError(msg) {
+    if(errorDiv) {
+      errorDiv.textContent = '⚠️ ' + msg;
+      errorDiv.classList.remove('hidden');
+      setTimeout(() => errorDiv.classList.add('hidden'), 5000);
     }
   }
-
-  // 히스토리 목록 표시
-  function displayHistoryList(container, items) {
-    container.innerHTML = '';
-
-    items.forEach(item => {
-      const itemEl = document.createElement('div');
-      itemEl.className = 'history-item';
-
-      const typeIcon = item.input_type === 'youtube' ? '📺' : '📰';
-      const date = item.last_analyzed_at
-        ? new Date(item.last_analyzed_at.seconds * 1000).toLocaleDateString('ko-KR')
-        : 'N/A';
-
-      itemEl.innerHTML = `
-        <div class="history-item-header">
-          <span class="history-type">${typeIcon} ${item.input_type === 'youtube' ? 'YouTube' : 'Article'}</span>
-          <span class="history-views">조회 ${item.view_count}회</span>
-        </div>
-        <div class="history-title">${escapeHtml(item.title || 'No title')}</div>
-        <div class="history-meta">
-          ${item.topics && item.topics.length > 0
-            ? `<div class="tags">${item.topics.map(t => `<span class="tag tag-small">${escapeHtml(t)}</span>`).join('')}</div>`
-            : ''}
-          <span class="history-date">${date}</span>
-        </div>
-      `;
-
-      // 클릭 시 해당 URL 분석
-      itemEl.addEventListener('click', () => {
-        urlInput.value = item.url;
-
-        // 타입 자동 선택
-        if (item.input_type === 'youtube') {
-          document.querySelector('input[value="youtube"]').checked = true;
-        } else {
-          document.querySelector('input[value="article"]').checked = true;
-        }
-
-        // 입력 탭으로 전환
-        document.querySelector('.tab-btn[data-tab="input"]').click();
-
-        // 스크롤
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      });
-
-      container.appendChild(itemEl);
-    });
+  function clearError() { if(errorDiv) errorDiv.classList.add('hidden'); }
+  function escapeHtml(text) {
+    if (!text) return '';
+    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
   }
+  function getCountryFlag(code) {
+    if (!code || code === 'Unknown') return '🌐';
+    return String.fromCodePoint(...code.toUpperCase().split('').map(c => 127397 + c.charCodeAt()));
+  }
+  function getFlagEmoji(code) { return getCountryFlag(code); }
+
+  async function loadPopularContent() { if(popularList) popularList.innerHTML = '기능 준비 중'; }
+  async function loadRecentHistory() { if(recentList) recentList.innerHTML = '기능 준비 중'; }
 });
