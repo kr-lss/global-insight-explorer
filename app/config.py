@@ -56,6 +56,12 @@ class Config:
     GDELT_MAX_RESULTS: int = 30  # GDELT 쿼리 결과 최대 개수
     THREAD_POOL_WORKERS: int = 10  # 병렬 기사 크롤링 워커 수
 
+    # GDELT DOC API settings (add_docsapi branch)
+    GDELT_DOC_API_URL: str = 'https://api.gdeltproject.org/api/v2/doc/doc'
+    GDELT_DOC_TIMEOUT: int = 10  # DOC API 타임아웃 (초)
+    GDELT_DOC_MAX_RECORDS: int = 250  # DOC API 최대 레코드 수
+    GDELT_SEARCH_TIMESPAN: str = '3m'  # 검색 시간 범위 (3개월)
+
     # Trusted news sources for GDELT filtering
     TRUSTED_DOMAINS: tuple = (
         # 북미/유럽 주요 언론
