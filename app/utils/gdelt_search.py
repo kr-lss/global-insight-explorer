@@ -487,7 +487,9 @@ class GDELTSearcher:
 
         # 2. BigQuery Fallback
         if self.bigquery.is_available():
-            results = self.bigquery.search(keywords, **merged_params)
+            # DOC API와 동일하게 keywords 키 제외
+            bq_kwargs = {k: v for k, v in merged_params.items() if k != 'keywords'}
+            results = self.bigquery.search(keywords, **bq_kwargs)
             if results:
                 return [r.to_dict() for r in results]
 
