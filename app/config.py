@@ -41,7 +41,7 @@ class Config:
     GEMINI_MODEL_EMBEDDING: str = 'text-embedding-004'   # [신규] 스마트 필터링용 임베딩 모델
 
     # [신규] Smart Filtering settings
-    SIMILARITY_THRESHOLD: float = 0.15  # [임시 완화] 유사도 기준점 (0.0 ~ 1.0, 높을수록 엄격)
+    SIMILARITY_THRESHOLD: float = 0.25  # 유사도 기준점 (0.0 ~ 1.0, 높을수록 엄격, 0.15 → 0.25 품질 개선)
 
     # Stance analysis settings
     STANCE_TYPES: tuple = ('supporting', 'opposing', 'neutral')
@@ -54,13 +54,13 @@ class Config:
     MAX_KEYWORDS: int = 5  # GDELT 검색에 사용할 최대 keywords 수
     SEARCH_WINDOW_DAYS: int = 14  # 사건 발생일 기준 ±N일 검색 (4 → 14일로 확대)
     GDELT_MAX_RESULTS: int = 100  # GDELT 쿼리 결과 최대 개수 (30 → 100개로 증가)
-    THREAD_POOL_WORKERS: int = 10  # 병렬 기사 크롤링 워커 수
+    THREAD_POOL_WORKERS: int = 20  # 병렬 기사 크롤링 워커 수 (10 → 20, 속도 개선)
 
     # GDELT DOC API settings (add_docsapi branch)
     GDELT_DOC_API_URL: str = 'https://api.gdeltproject.org/api/v2/doc/doc'
     GDELT_DOC_TIMEOUT: int = 10  # DOC API 타임아웃 (초)
-    GDELT_DOC_MAX_RECORDS: int = 250  # DOC API 최대 레코드 수
-    GDELT_SEARCH_TIMESPAN: str = '6m'  # 검색 시간 범위 (3m → 6개월로 확대)
+    GDELT_DOC_MAX_RECORDS: int = 50  # DOC API 최대 레코드 수 (250 → 50, 속도-품질 균형)
+    GDELT_SEARCH_TIMESPAN: str = '6m'  # 검색 시간 범위 (6개월 유지, 과거 이슈 검색 지원)
 
     # Trusted news sources for GDELT filtering
     TRUSTED_DOMAINS: tuple = (
