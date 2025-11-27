@@ -507,41 +507,93 @@ class GDELTSearcher:
 
     def _merge_search_params(self, search_params: dict) -> List[str]:
         """
-        [추가됨] 기존 로직 호환성을 위한 파라미터 병합
+        [개선됨] 검색 파라미터 병합 - Context Injection 전략 적용
 
-        entities, themes가 있으면 keywords에 병합하여 DOC API 검색에 사용
+        전략:
+        1. Context Injection: 국가별 맥락을 키워드에 강제 결합
+        2. Composite Keywords: 2단어 이상 구문 우선
+        3. Themes 제거: URL 검색에 부적합한 추상 키워드 배제
         """
+        # 국가 코드 → 국가명 매핑
+        COUNTRY_NAME_MAP = {
+            'CN': 'China', 'JP': 'Japan', 'KR': 'South Korea',
+            'US': 'United States', 'VN': 'Vietnam', 'IN': 'India',
+            'TH': 'Thailand', 'ID': 'Indonesia', 'MY': 'Malaysia',
+            'SG': 'Singapore', 'PH': 'Philippines', 'AU': 'Australia',
+            'GB': 'United Kingdom', 'DE': 'Germany', 'FR': 'France',
+            'RU': 'Russia', 'BR': 'Brazil', 'MX': 'Mexico'
+        }
+
         keywords = list(search_params.get('keywords', []))
+
+        # [전략 1] Context Injection: 국가 + 주제 조합
+        locations = search_params.get('locations', [])
+        if locations and keywords:
+            # 국가명 추출
+            country_names = [COUNTRY_NAME_MAP.get(loc, loc) for loc in locations]
+
+            # 주제 키워드 중 가장 핵심적인 것 선택 (복합 키워드 우선)
+            main_topic_keywords = sorted(
+                [kw for kw in keywords if len(kw.split()) >= 2],
+                key=lambda x: len(x.split()),
+                reverse=True
+            )[:2]  # 상위 2개 복합 키워드
+
+            # "{국가명} + {핵심 주제}" 조합 생성
+            for country in country_names:
+                for topic in main_topic_keywords:
+                    # 예: "South Korea trade war", "Vietnam supply chain"
+                    combined = f"{country} {topic}"
+                    keywords.insert(0, combined)  # 최우선 순위로 추가
+
+            print(f"   🎯 Context Injection: {country_names} + {main_topic_keywords}")
 
         # entities 병합 (인물, 조직)
         entities = search_params.get('entities', [])
         if entities:
             keywords.extend(entities)
-            print(f"   📌 entities → keywords 병합: {entities}")
+            print(f"   📌 entities 병합: {entities}")
 
-        # themes 병합 (GDELT 테마 코드는 일반 텍스트로 변환)
+        # [전략 3] Themes 제거 (URL 검색에 부적합)
+        # ECON_TRADE, POLICY_TRADE 같은 코드는 URL에 없으므로 무시
         themes = search_params.get('themes', [])
         if themes:
-            # 테마 코드를 검색 가능한 형태로 변환 (예: ECON_TRADE → trade)
-            theme_keywords = [
-                t.replace('_', ' ').lower()
-                for t in themes
-                if t and len(t) > 2
-            ]
-            keywords.extend(theme_keywords)
-            print(f"   📌 themes → keywords 병합: {themes} → {theme_keywords}")
+            print(f"   ⚠️ themes 무시됨 (URL 검색 부적합): {themes}")
 
-        # locations 병합 (국가명)
-        locations = search_params.get('locations', [])
-        if locations:
-            keywords.extend(locations)
-            print(f"   📌 locations → keywords 병합: {locations}")
+        # [전략 2] Composite Keywords 우선 정렬
+        # 단일 단어 필터링 (너무 포괄적)
+        BANNED_SINGLE_WORDS = {'china', 'japan', 'korea', 'us', 'trade', 'economy', 'cn', 'jp', 'kr'}
 
-        # 중복 제거 및 빈 문자열 필터링
-        keywords = list(set(k.strip() for k in keywords if k and len(k.strip()) > 1))
+        filtered_keywords = []
+        for kw in keywords:
+            kw_stripped = kw.strip()
+            if not kw_stripped or len(kw_stripped) < 2:
+                continue
 
-        print(f"   🔑 최종 검색 키워드: {keywords}")
-        return keywords
+            # 단일 단어이면서 금지 목록에 있으면 제외
+            if len(kw_stripped.split()) == 1 and kw_stripped.lower() in BANNED_SINGLE_WORDS:
+                print(f"   🚫 단일 단어 필터링: '{kw_stripped}'")
+                continue
+
+            filtered_keywords.append(kw_stripped)
+
+        # 중복 제거 (순서 유지)
+        seen = set()
+        unique_keywords = []
+        for kw in filtered_keywords:
+            kw_lower = kw.lower()
+            if kw_lower not in seen:
+                seen.add(kw_lower)
+                unique_keywords.append(kw)
+
+        # 복합 키워드(2단어 이상) 우선 정렬
+        composite = [kw for kw in unique_keywords if len(kw.split()) >= 2]
+        single = [kw for kw in unique_keywords if len(kw.split()) == 1]
+
+        final_keywords = composite + single
+
+        print(f"   🔑 최종 검색 키워드 ({len(final_keywords)}개): {final_keywords[:5]}...")
+        return final_keywords
 
     def search_with_fallback(self, search_params: dict) -> List[Dict]:
         """
