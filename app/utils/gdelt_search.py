@@ -176,7 +176,16 @@ class GDELTDocAPIStrategy(SearchStrategy):
             response.raise_for_status()
 
             # 3. 결과 파싱
-            data = response.json()
+            try:
+                data = response.json()
+            except ValueError as e:
+                # JSON 파싱 실패 시 응답 내용 출력
+                print(f"⚠️ [DOC API] JSON 파싱 실패: {e}")
+                print(f"   응답 내용 (처음 200자): {response.text[:200]}")
+                print(f"   응답 상태: {response.status_code}")
+                self._available = False
+                return []
+
             articles = self._parse_response(data)
 
             # [추가됨] API 레벨 중복 제거
