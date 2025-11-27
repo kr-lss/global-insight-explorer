@@ -39,13 +39,6 @@ export const STANCE_CONFIG = {
   },
 };
 
-// 신뢰도 등급
-export const CREDIBILITY = {
-  HIGH: { min: 80, label: '높은 신뢰도', class: 'high' },
-  MEDIUM: { min: 60, max: 79, label: '중간 신뢰도', class: 'medium' },
-  LOW: { max: 59, label: '낮은 신뢰도', class: 'low' },
-};
-
 // 국가 플래그 매핑
 export const COUNTRY_FLAGS = {
   'KR': '🇰🇷',
@@ -68,7 +61,6 @@ export const COUNTRY_FLAGS = {
 
 // UI 기본값
 export const UI_DEFAULTS = {
-  CREDIBILITY: 50,
   CONFIDENCE_DECIMALS: 0,
   BIAS: 'N/A',
   DATE: 'N/A',

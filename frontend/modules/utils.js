@@ -2,7 +2,7 @@
  * 프론트엔드 유틸리티 함수 (ES Module)
  */
 
-import { CREDIBILITY, COUNTRY_FLAGS, UI_DEFAULTS } from './constants.js';
+import { COUNTRY_FLAGS, UI_DEFAULTS } from './constants.js';
 
 /**
  * HTML 특수문자 이스케이프 (XSS 방지)
@@ -23,23 +23,6 @@ export function escapeHtml(text) {
  */
 export function getCountryFlag(countryCode) {
   return COUNTRY_FLAGS[countryCode] || '🌐';
-}
-
-/**
- * 신뢰도 점수에 따른 CSS 클래스 반환
- * @param {number} credibility - 신뢰도 점수 (0-100)
- * @returns {string} CSS 클래스명
- */
-export function getCredibilityClass(credibility) {
-  const score = credibility || UI_DEFAULTS.CREDIBILITY;
-
-  if (score >= CREDIBILITY.HIGH.min) {
-    return CREDIBILITY.HIGH.class;
-  } else if (score >= CREDIBILITY.MEDIUM.min) {
-    return CREDIBILITY.MEDIUM.class;
-  } else {
-    return CREDIBILITY.LOW.class;
-  }
 }
 
 /**

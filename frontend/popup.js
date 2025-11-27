@@ -335,22 +335,12 @@ document.addEventListener('DOMContentLoaded', () => {
           
           const articleEl = document.createElement('div');
           articleEl.className = 'article-card';
-          
-          // 신뢰도 점수에 따른 색상
-          const credibility = article.credibility || 50;
-          let credibilityClass = 'medium';
-          if (credibility >= 80) credibilityClass = 'high';
-          else if (credibility < 60) credibilityClass = 'low';
-          
+
           articleEl.innerHTML = `
             <div class="article-header">
               <div class="article-source">
                 <span class="source-name">${escapeHtml(article.source)}</span>
                 <span class="country-flag">${getCountryFlag(article.country)}</span>
-              </div>
-              <div class="credibility-badge ${credibilityClass}">
-                <span class="credibility-score">${credibility}</span>
-                <span class="credibility-label">신뢰도</span>
               </div>
             </div>
             <div class="article-title">

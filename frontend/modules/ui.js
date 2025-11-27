@@ -6,7 +6,6 @@ import { UI_DEFAULTS, STANCE_CONFIG } from './constants.js';
 import {
   escapeHtml,
   getCountryFlag,
-  getCredibilityClass,
   confidenceToPercent,
   formatFirestoreTimestamp,
   extractClaimText,
@@ -189,8 +188,6 @@ export function renderSourcesResults(container, analysis, articles) {
     container.appendChild(resultEl);
   });
 
-  // 신뢰도 안내
-  container.appendChild(createCredibilityGuide());
 }
 
 /**
@@ -247,10 +244,6 @@ function createArticleCard(article) {
   const articleEl = document.createElement('div');
   articleEl.className = 'article-card';
 
-  // 신뢰도 점수에 따른 색상
-  const credibility = article.credibility || UI_DEFAULTS.CREDIBILITY;
-  const credibilityClass = getCredibilityClass(credibility);
-
   // 분석 정보
   const analysis = article.analysis || {};
   const confidence = confidenceToPercent(analysis.confidence);
@@ -264,10 +257,6 @@ function createArticleCard(article) {
         <span class="country-flag">${getCountryFlag(article.country)}</span>
       </div>
       <div class="article-badges">
-        <div class="credibility-badge ${credibilityClass}">
-          <span class="credibility-score">${credibility}</span>
-          <span class="credibility-label">신뢰도</span>
-        </div>
         <div class="confidence-badge">
           <span class="confidence-score">${confidence}%</span>
           <span class="confidence-label">확신도</span>
@@ -300,36 +289,6 @@ function createArticleCard(article) {
   `;
 
   return articleEl;
-}
-
-/**
- * 신뢰도 안내 생성 (헬퍼 함수)
- * @returns {HTMLElement} 신뢰도 안내 엘리먼트
- */
-function createCredibilityGuide() {
-  const guideEl = document.createElement('div');
-  guideEl.className = 'credibility-guide';
-  guideEl.innerHTML = `
-    <h5 class="guide-title">출처 정보 안내</h5>
-    <div class="guide-content">
-      <div class="guide-item">
-        <span class="guide-badge high">80+</span>
-        <span>주요 국제 언론사</span>
-      </div>
-      <div class="guide-item">
-        <span class="guide-badge medium">60-79</span>
-        <span>일반 언론사</span>
-      </div>
-      <div class="guide-item">
-        <span class="guide-badge low">&lt;60</span>
-        <span>기타 출처</span>
-      </div>
-    </div>
-    <p class="guide-note">
-      점수는 단순 참고용입니다. 각 출처의 내용을 직접 확인하고 판단하세요.
-    </p>
-  `;
-  return guideEl;
 }
 
 /**
