@@ -150,8 +150,15 @@ def get_article_search_prompt(query: str) -> str:
 
 # 검색 쿼리 최적화 프롬프트
 QUERY_OPTIMIZATION_PROMPT = """
-You are a Search Query Optimizer for GDELT (Global Database of Events, Language, and Tone).
-Your goal is to convert a user's natural language question into a precise search strategy.
+You are a GDELT (Global Database of Events, Language, and Tone) Search Optimization Expert.
+Your mission is to convert user questions into highly optimized search keywords that maximize article discovery.
+
+[CRITICAL: GDELT URL Structure Understanding]
+GDELT searches news article URLs (DocumentIdentifier), which typically follow this pattern:
+- Example: ".../south-korea-china-trade-benefits-2024..."
+- URLs contain hyphenated keywords from article titles
+- Abstract words like "policy", "economy" rarely appear in URLs
+- Country names and specific events DO appear in URLs
 
 User's Input: "{user_input}"
 
@@ -159,19 +166,117 @@ Context (Content being analyzed):
 - Title: "{context_title}"
 - Related Claims: {context_claims}
 
-Task:
-1. Analyze the User's Input. If it's vague (e.g., "is this true?"), use the Context to infer the specific topic.
-2. Generate **English Search Keywords** for GDELT. Use specific entities (People, Orgs, Locations) and topics.
-3. Generate **Korean Search Keywords** for local news coverage.
-4. Determine relevant **Country Codes** (ISO 3166-1 alpha-2, e.g., 'US', 'KR').
-5. Assess **Confidence** (0.0 to 1.0). If the input is gibberish, return low confidence.
+[Task Steps]
+1. **Intent Analysis**: Understand what the user wants to know
+   - If vague (e.g., "is this true?"), infer from context
+   - Identify issue type: Single country event OR Multi-country conflict
 
-Output JSON format:
+2. **Target Countries**: Select 3-5 relevant country codes (ISO alpha-2)
+   - Primary stakeholders (parties directly involved)
+   - Secondary stakeholders (neighbors, affected countries, beneficiaries)
+
+3. **OPTIMIZED Keyword Generation Rules** ⭐ MOST IMPORTANT ⭐
+
+   [Rule A: Country Name Injection - MANDATORY]
+   - EVERY keyword MUST include a country name or location
+   - Bad ❌: "trade war", "economic sanctions"
+   - Good ✅: "China Japan trade war", "US sanctions impact"
+
+   [Rule B: Composite Phrases - 2 to 4 words]
+   - Use news headline style phrases
+   - Bad ❌: "trade" (too short), "economic policy response analysis" (too long)
+   - Good ✅: "export controls", "tariff dispute", "supply chain shift"
+
+   [Rule C: Specific Events over Abstract Concepts]
+   - Use concrete actions, not abstract nouns
+   - Bad ❌: "policy", "development", "situation"
+   - Good ✅: "visa restriction", "import ban", "factory relocation"
+
+   [Rule D: URL-Friendly Terms]
+   - Think: "Would this appear in a news article URL?"
+   - Bad ❌: "econ trade" (abbreviation), "INTL relations" (code)
+   - Good ✅: "trade agreement", "diplomatic relations"
+
+   [Rule E: Timely Language]
+   - For recent events, include recency indicators
+   - Good ✅: "2024 tariff increase", "latest trade data", "ongoing dispute"
+
+4. **English Keywords (Primary)**: Generate 5-7 keywords
+   - First 2-3: "{Country Name} + {Main Topic}"
+   - Example: "South Korea export opportunity", "Vietnam supply chain alternative"
+   - Next 2-3: Specific events or impacts
+   - Example: "semiconductor export ban", "rare earth restrictions"
+   - Last 1-2: Broader context
+   - Example: "trade war beneficiaries", "economic decoupling"
+
+5. **Korean Keywords (Secondary)**: 3-5 keywords for local coverage
+   - Use natural Korean phrases that would appear in Korean news
+   - Example: "한국 수출 기회", "베트남 공급망 이전"
+
+6. **Confidence Score**: 0.0 to 1.0
+   - High (>0.8): Clear, specific question with identifiable countries
+   - Medium (0.5-0.8): Somewhat vague but context helps
+   - Low (<0.5): Gibberish or completely unclear
+
+[Output Format - JSON ONLY]
 {{
-    "interpreted_intent": "Brief summary of what user wants in English",
-    "search_keywords_en": ["keyword1", "keyword2"],
-    "search_keywords_kr": ["키워드1", "키워드2"],
-    "target_country_codes": ["US", "KR"],
+    "interpreted_intent": "What the user wants to know (1 sentence in English)",
+    "search_keywords_en": [
+        "Country1 main topic keyword",
+        "Country2 specific event",
+        "concrete action phrase",
+        "impact or outcome phrase",
+        "broader context keyword"
+    ],
+    "search_keywords_kr": [
+        "국가명 포함 키워드1",
+        "구체적 사건 키워드2",
+        "영향 키워드3"
+    ],
+    "target_country_codes": ["KR", "CN", "JP", "VN", "US"],
     "confidence": 0.95
 }}
+
+[Examples]
+
+Input: "중국과 일본이 경제 보복을 한다는데 반사이익을 보는 나라는?"
+Output:
+{{
+    "interpreted_intent": "Identify countries benefiting from China-Japan economic retaliation",
+    "search_keywords_en": [
+        "South Korea China Japan trade",
+        "Vietnam supply chain alternative",
+        "Korea export opportunity",
+        "semiconductor production shift",
+        "trade war beneficiaries Asia"
+    ],
+    "search_keywords_kr": [
+        "한국 중일 무역분쟁 수혜",
+        "베트남 공급망 대체",
+        "반도체 생산 이전"
+    ],
+    "target_country_codes": ["KR", "VN", "TH", "IN", "MX"],
+    "confidence": 0.92
+}}
+
+Input: "Is Biden's chip policy working?"
+Output:
+{{
+    "interpreted_intent": "Evaluate effectiveness of Biden's semiconductor policy",
+    "search_keywords_en": [
+        "Biden CHIPS Act impact",
+        "US semiconductor manufacturing",
+        "Intel TSMC factory investment",
+        "China chip export controls",
+        "American chip industry revival"
+    ],
+    "search_keywords_kr": [
+        "바이든 반도체 정책 효과",
+        "미국 칩 제조 부활"
+    ],
+    "target_country_codes": ["US", "CN", "KR", "TW"],
+    "confidence": 0.88
+}}
+
+CRITICAL REMINDER: Your keywords will be used to search GDELT URLs. Make them concrete, specific, and URL-friendly!
 """
