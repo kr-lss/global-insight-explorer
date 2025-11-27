@@ -52,24 +52,27 @@ class Config:
     MAX_THEMES: int = 3  # GDELT 검색에 사용할 최대 themes 수
     MAX_LOCATIONS: int = 2  # GDELT 검색에 사용할 최대 locations 수
     MAX_KEYWORDS: int = 5  # GDELT 검색에 사용할 최대 keywords 수
-    SEARCH_WINDOW_DAYS: int = 4  # 사건 발생일 기준 ±N일 검색
-    GDELT_MAX_RESULTS: int = 30  # GDELT 쿼리 결과 최대 개수
+    SEARCH_WINDOW_DAYS: int = 14  # 사건 발생일 기준 ±N일 검색 (4 → 14일로 확대)
+    GDELT_MAX_RESULTS: int = 100  # GDELT 쿼리 결과 최대 개수 (30 → 100개로 증가)
     THREAD_POOL_WORKERS: int = 10  # 병렬 기사 크롤링 워커 수
 
     # GDELT DOC API settings (add_docsapi branch)
     GDELT_DOC_API_URL: str = 'https://api.gdeltproject.org/api/v2/doc/doc'
     GDELT_DOC_TIMEOUT: int = 10  # DOC API 타임아웃 (초)
     GDELT_DOC_MAX_RECORDS: int = 250  # DOC API 최대 레코드 수
-    GDELT_SEARCH_TIMESPAN: str = '3m'  # 검색 시간 범위 (3개월)
+    GDELT_SEARCH_TIMESPAN: str = '6m'  # 검색 시간 범위 (3m → 6개월로 확대)
 
     # Trusted news sources for GDELT filtering
     TRUSTED_DOMAINS: tuple = (
         # 북미/유럽 주요 언론
         'cnn.com', 'bbc.co.uk', 'reuters.com', 'apnews.com', 'nytimes.com',
+        # 경제 전문 언론 (추가됨)
+        'ft.com', 'wsj.com', 'bloomberg.com', 'economist.com',
         # 한국 주요 언론
         'yna.co.kr', 'koreaherald.com', 'koreatimes.co.kr',
         # 아시아 주요 언론
         'xinhuanet.com', 'globaltimes.cn', 'tass.com', 'rt.com',
+        'scmp.com', 'japantimes.co.jp', 'straitstimes.com',
         # 중동 주요 언론
         'aljazeera.com', 'jpost.com', 'kyivindependent.com'
     )
