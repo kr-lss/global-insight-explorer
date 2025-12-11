@@ -26,7 +26,7 @@ class URLContextService:
                 location=config.GCP_REGION,
                 http_options=types.HttpOptions(api_version="v1beta1")
             )
-            self.model = "gemini-2.0-flash"
+            self.model = "gemini-2.5-flash"
             print("✅ (URLContextService) Gemini API 연결 성공")
         except Exception as e:
             print(f"⚠️ (URLContextService) Gemini API 연결 실패: {e}")
@@ -216,7 +216,7 @@ class URLContextService:
 #                 location=config.GCP_REGION,
 #                 http_options=types.HttpOptions(api_version="v1beta1")
 #             )
-#             self.model = "gemini-2.0-flash"
+#             self.model = "gemini-2.5-flash"
 #             print("✅ (AsyncURLContextService) Gemini API 연결 성공")
 #         except Exception as e:
 #             print(f"⚠️ (AsyncURLContextService) 연결 실패: {e}")
